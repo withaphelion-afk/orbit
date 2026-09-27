@@ -11,3 +11,6 @@ data/logs/
 *.bsp
 web/node_modules/
 web/dist/
+data/analysis/
+data/*.json
+data/*.tmp
