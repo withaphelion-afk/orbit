@@ -4,9 +4,10 @@ every feature, and log a snapshot of the current state.
 This is deliberately the "thin" layer — it doesn't decide anything or
 compute any logic itself, it just wires together data/pipeline.py and
 features/pipeline.py on a schedule, and starts the daily analysis run
-(analysis/run.py, as its own process) at ANALYSIS_DAILY_AT_UTC. No trade suggestions happen here yet
-(that's the strategy layer, still to come) — right now this is purely
-the "always watching, always logging" backbone.
+(analysis/run.py, as its own process) at ANALYSIS_DAILY_AT_UTC. After each
+data refresh it also checks the strategy for a new RSI divergence on the
+latest completed bar, expires undecided suggestions and resolves outcomes
+(strategy/live.py), so the journal and drift check stay current.
 
 Design note for anyone maintaining this: a 24/7 process must never crash
 on a single bad cycle (a dropped API call, a rate limit, a network
@@ -66,6 +67,11 @@ def run_once(logger: logging.Logger) -> None:
     fetch_all_prices()
     fetch_all_ephemeris()
     compute_all_features()
+    from orbit.strategy import live
+
+    counts = live.refresh()
+    if any(counts.values()):
+        logger.info(f"Suggestions: {counts['new']} new, {counts['expired']} expired, {counts['resolved']} outcomes resolved.")
     _log_current_state(logger)
     logger.info("Cycle complete.")
 

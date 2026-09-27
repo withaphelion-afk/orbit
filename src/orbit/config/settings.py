@@ -75,6 +75,14 @@ ANALYSIS_SCHEDULE_ENABLED = True
 ANALYSIS_DAILY_AT_UTC = "00:30"  # after the 00:00 UTC daily close
 PLACEBO_WEEKDAY = 6  # Sunday's scheduled run also runs the placebo check (0 = Monday)
 
+# --- Strategy, backtest, journal ------------------------------------------------
+# The strategy's own parameters live in strategy/rsi_divergence.py (fixed, not fitted).
+BACKTEST_COST_PER_SIDE = {"BTC": 0.001, "ETH": 0.001, "SOL": 0.001, "SILVER": 0.0005}  # fees, as a fraction
+BACKTEST_SLIPPAGE = 0.0005  # per side
+SUGGESTION_EXPIRY_BARS = 3  # an undecided suggestion expires after this many daily bars
+DRIFT_WATCH_Z = 1.0
+DRIFT_SCALE_DOWN_Z = 2.0
+
 # --- API server (python -m orbit.api) ----------------------------------------
 API_HOST = os.getenv("ORBIT_API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("ORBIT_API_PORT", "8000"))
