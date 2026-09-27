@@ -37,6 +37,18 @@ class Direction(str, Enum):
     SHORT = "SHORT"
 
 
+class Regime(str, Enum):
+    """The shared market environment, computed from BTC/ETH trend + volatility.
+
+    Gates whether per-asset entries are even considered — see
+    features/regime.py for how this is derived.
+    """
+
+    BULL = "BULL"
+    BEAR = "BEAR"
+    CHOPPY = "CHOPPY"  # no clear trend — regime gate blocks new entries
+
+
 class Signal(BaseModel):
     """One piece of evidence produced by a feature (technical, regime, astro, ...)."""
 
@@ -65,6 +77,57 @@ class Decision(str, Enum):
     TAKEN = "TAKEN"
     SKIPPED = "SKIPPED"
     MODIFIED = "MODIFIED"
+
+
+class Planet(str, Enum):
+    SUN = "SUN"
+    MOON = "MOON"
+    MERCURY = "MERCURY"
+    VENUS = "VENUS"
+    MARS = "MARS"
+    JUPITER = "JUPITER"
+    SATURN = "SATURN"
+    URANUS = "URANUS"
+    NEPTUNE = "NEPTUNE"
+    PLUTO = "PLUTO"
+
+
+class EphemerisSnapshot(BaseModel):
+    """Where one planet was, on one day, from Earth's point of view.
+
+    `longitude` is ecliptic longitude in degrees (0-360), the standard
+    astrological/astronomical coordinate for "which zodiac sign." `sign`
+    is that same position translated into a zodiac sign name for
+    readability. `retrograde` is True when the planet's apparent motion
+    is backward from Earth's viewpoint, computed by comparing today's
+    longitude to yesterday's.
+    """
+
+    planet: Planet
+    date: datetime
+    longitude: float
+    sign: str
+    retrograde: bool
+
+
+class FeatureRecord(BaseModel):
+    """One computed signal value, for one asset, on one day.
+
+    This is what the feature store holds — the layer between raw data
+    (data/) and strategy logic (strategy/). Every feature (technical,
+    regime, astro) gets written in this same shape, keyed by
+    (asset, name, date), so the strategy layer and any future ML model
+    can read them all the same way without caring how each was computed.
+
+    `value` is always a float so features can be combined/scored
+    uniformly — categorical features (e.g. a zodiac sign) get encoded as
+    0/1 flags (one FeatureRecord per category) rather than stored as text.
+    """
+
+    asset: Asset
+    name: str
+    date: datetime
+    value: float
 
 
 class JournalEntry(BaseModel):
