@@ -59,4 +59,10 @@ Design principles to keep in mind while contributing (see the doc for the full r
 
 ## Status
 
-Just getting started — see the doc's Build Plan section for current phase status.
+- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`) — done.
+- `data/binance.py` + `data/silver.py` — fetch BTC/ETH/SOL and silver daily candles from public APIs (no keys needed) — done. Run with `uv run python scripts/fetch_data.py`.
+- `data/storage.py` — save/load candles as CSV under `data/` — done.
+- `features/regime.py` — the regime gate: reads BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY — done. This gates whether per-asset entries are considered at all (see the doc's System architecture section for the reasoning).
+- Per-asset entry scoring, the actual strategy rules, backtesting, the journal, and the 24/7 runner — not started yet.
+
+See the doc's Build Plan section for phase-level status.
