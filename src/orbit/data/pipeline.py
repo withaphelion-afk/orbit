@@ -34,7 +34,12 @@ def fetch_all_ephemeris(years: int = EPHEMERIS_YEARS_OF_HISTORY) -> None:
     needing incremental updates.
     """
     days = years * 365
-    start_date = datetime.now(timezone.utc) - timedelta(days=days)
+    # Midnight UTC, not datetime.now()'s time-of-day — candles are stored
+    # at midnight, and dates need to match exactly for the feature store's
+    # per-day join (technical/regime features vs. astro features) and for
+    # the astro-events API to line up transit dates with price dates.
+    today_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date = today_midnight - timedelta(days=days)
 
     for planet in Planet:
         snapshots = ephemeris.backfill_planet(planet, start_date, days=days)

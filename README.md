@@ -71,6 +71,7 @@ This README is the single source of truth for planning — update it in place wh
 - `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
 - `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
 - `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process — done, verified against real data end to end.
+- `api/` — the web API the React frontend talks to (`api/app.py`, FastAPI). Serves real data for quotes, candles, signals, astro transit stats (including actual historical BTC forward returns after past transits), and system status; honestly returns empty/neutral for suggestions, journal, and drift since the strategy layer doesn't exist yet — done, verified against a live server (including the WebSocket tick feed).
 - Per-asset entry scoring, the actual strategy rules, backtesting, and the journal — not started yet.
 
 ### Running the 24/7 runner
@@ -80,6 +81,22 @@ uv run python -m orbit.runner.loop
 ```
 
 Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Logs go to console and `data/logs/runner.log`. This process needs to actually stay running somewhere — for now that's a terminal you leave open; the "VPS vs home server" open decision below is about making that permanent.
+
+### Running the web API (backend for the React frontend)
+
+```bash
+uv run uvicorn orbit.api.app:app --reload
+```
+
+Serves on `http://127.0.0.1:8000` by default, matching what `web/vite.config.ts` proxies `/api` and `/ws` to. Run `scripts/fetch_data.py`, `scripts/fetch_ephemeris.py`, and `scripts/compute_features.py` first (or run the runner once) so there's real data for it to serve.
+
+To switch the frontend from its built-in mock data to this real backend, set in `web/.env` (or the shell before `npm run dev`):
+```
+VITE_ORBIT_API=http
+```
+Everything else in the UI stays the same — `api/index.ts` just swaps which data source it uses.
+
+**Endpoints not yet meaningful** (no strategy layer exists): `/api/suggestions` and `/api/journal` return `[]`, `/api/drift` returns an honest all-zero report — not fabricated numbers, just nothing to show yet.
 
 ## Full plan
 
