@@ -152,3 +152,53 @@ def test_stitch_joins_at_primary_start():
 def test_stitch_refuses_disagreeing_venues():
     with pytest.raises(StitchError):
         stitch(_candles(0, [100.0] * 20, "old"), _candles(10, [120.0] * 20, "new"))
+
+
+# ---------------------------------------------------------------- exact moments and timing
+
+from datetime import datetime as _dt  # noqa: E402
+
+from orbit.analysis import exact_times, timing  # noqa: E402
+from orbit.core.types import TransitEvent  # noqa: E402
+
+
+def test_exact_ingress_lands_on_the_sign_boundary():
+    # Mars enters Leo in late September 2026 (detected on the day after it happens).
+    e = TransitEvent(planet=Planet.MARS, event_type=TransitEventType.INGRESS, date=_dt(2026, 9, 29, tzinfo=timezone.utc), from_state="Cancer", to_state="Leo")
+    [refined] = exact_times.refine([e])
+    assert refined.exact_time is not None
+    assert e.date - timedelta(days=1) <= refined.exact_time <= e.date
+    assert refined.date == refined.exact_time.replace(hour=0, minute=0, second=0)  # re-dated to the real day
+    tt = exact_times._jd([refined.exact_time])
+    lon = exact_times._longitude(Planet.MARS, tt)[0]
+    assert abs(exact_times._wrap(lon - 120.0)) < 1e-3  # Leo starts at 120 degrees
+
+
+def test_shift_moves_exact_times_too():
+    e = TransitEvent(planet=Planet.SUN, event_type=TransitEventType.INGRESS, date=_dt(2020, 1, 2, tzinfo=timezone.utc), from_state="Sagittarius", to_state="Capricorn", exact_time=_dt(2020, 1, 1, 10, 30, tzinfo=timezone.utc))
+    [s] = exact_times.shift([e], 10)
+    assert s.date == e.date + timedelta(days=10) and s.exact_time == e.exact_time + timedelta(days=10)
+
+
+def _hourly(prices, start="2021-01-04T00"):
+    close = np.array(prices, dtype=float)
+    dates = np.arange(np.datetime64(start), np.datetime64(start) + np.timedelta64(len(close), "h"), dtype="datetime64[h]")
+    return PriceSeries(Asset.BTC, dates, close.copy(), close.copy(), close.copy(), close)
+
+
+def test_hour_index_maps_closed_market_to_next_bar():
+    s = _hourly([100.0] * 10)
+    assert timing.hour_index(s, _dt(2021, 1, 4, 3, 45, tzinfo=timezone.utc)) == 3
+    assert timing.hour_index(s, _dt(2021, 1, 3, 20, 0, tzinfo=timezone.utc)) == 0  # 4h before the first bar
+    assert timing.hour_index(s, _dt(2020, 12, 30, 0, 0, tzinfo=timezone.utc)) is None  # too far before
+
+
+def test_path_metrics_times_the_move_from_the_exact_moment():
+    # Flat for 80 hours, then +1% per hour for 10 hours, then flat.
+    prices = [100.0] * 80 + [100.0 * 1.01**k for k in range(1, 11)] + [100.0 * 1.01**10] * 30
+    s = _hourly(prices)
+    m = timing.path_metrics(s, 75, direction=1, window_hours=48, atr_fraction=0.03)
+    assert m["pre_move_return"] == pytest.approx(0.0)
+    assert m["hours_to_move"] == 7  # bar 82 is the first +3% (1.01^3 - 1 ≈ 3.03%)
+    assert m["hours_to_peak"] == 14  # the rally tops out at bar 89
+    assert m["peak_return"] == pytest.approx(1.01**10 - 1)

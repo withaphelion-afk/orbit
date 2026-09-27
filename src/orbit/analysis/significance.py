@@ -34,19 +34,34 @@ TAIL_MIN_EXCEEDANCES = 10
 P_FLOOR = 1e-6
 
 
-def shift_null_counts(target: np.ndarray, events: np.ndarray, min_gap: int) -> np.ndarray:
+def shift_null_counts(target, events, min_gap: int) -> np.ndarray:
     """Hit counts for every circular shift of `events` against `target`.
 
-    Both are 0/1 arrays over the same L bars. Element k of the circular
-    cross-correlation is the number of shifted events (t -> t+k mod L) that
-    land on a target bar. Shifts within `min_gap` of 0 (either side) are dropped.
+    Both are 0/1 arrays over the same L bars (or their precomputed rfft, see
+    `spectrum`, so a series used by many tests is transformed once). Element k
+    of the circular cross-correlation is the number of shifted events
+    (t -> t+k mod L) that land on a target bar. Shifts within `min_gap` of 0
+    (either side) are dropped.
     """
-    L = len(target)
-    corr = np.fft.irfft(np.fft.rfft(target, L) * np.conj(np.fft.rfft(events, L)), L)
+    t, e = spectrum(target), spectrum(events)
+    corr = np.fft.irfft(t.values * np.conj(e.values), t.n)
     counts = np.rint(corr).astype(int)
+    L = t.n
     if L <= 2 * min_gap + 1:
         return counts[1:]
     return counts[min_gap : L - min_gap + 1]
+
+
+class Spectrum:
+    """An rfft together with the length it came from."""
+
+    def __init__(self, x: np.ndarray):
+        self.n = len(x)
+        self.values = np.fft.rfft(x, self.n)
+
+
+def spectrum(x) -> Spectrum:
+    return x if isinstance(x, Spectrum) else Spectrum(np.asarray(x, dtype=float))
 
 
 def shift_p_value(observed_hits: int, null_hits: np.ndarray) -> float:
