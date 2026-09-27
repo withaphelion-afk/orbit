@@ -52,21 +52,76 @@ export function pval(v: number | null | undefined): string {
 
 interface TransitLike {
   planet: string
-  event_type: 'INGRESS' | 'STATION_RETROGRADE' | 'STATION_DIRECT'
+  other_planet?: string | null
+  event_type: string
+  from_state?: string
   to_state: string
   backward?: boolean
   reentry?: boolean
+  label?: string
 }
 
-const PLANET_ABBR: Record<string, string> = {
-  SUN: 'SUN', MOON: 'MOON', MERCURY: 'MER', VENUS: 'VEN', MARS: 'MAR', JUPITER: 'JUP', SATURN: 'SAT', URANUS: 'URA', NEPTUNE: 'NEP', PLUTO: 'PLU',
+/** Vedic graha names (src/orbit/vedic/zodiac.py SHORT), and 3-letter forms for chart markers. */
+const GRAHA: Record<string, string> = {
+  SUN: 'Surya', MOON: 'Chandra', MARS: 'Mangal', MERCURY: 'Budh', JUPITER: 'Guru', VENUS: 'Shukra', SATURN: 'Shani', RAHU: 'Rahu', KETU: 'Ketu',
+}
+const GRAHA_ABBR: Record<string, string> = {
+  SUN: 'SUR', MOON: 'CHA', MARS: 'MAN', MERCURY: 'BUD', JUPITER: 'GUR', VENUS: 'SHU', SATURN: 'SHA', RAHU: 'RAH', KETU: 'KET',
 }
 
-export const planetAbbr = (p: string) => PLANET_ABBR[p] ?? p
+export const grahaName = (p: string) => GRAHA[p] ?? p
+export const planetAbbr = (p: string) => GRAHA_ABBR[p] ?? p
 
-/** "Mars → Aries", "Mercury Rx", "Mercury D". */
+/** The backend's own label ("Shani (Saturn) enters Meena (Pisces)"), or a compact form for chart markers ("SHA→Meena"). */
 export function transitLabel(e: TransitLike, short = false): string {
-  const name = short ? planetAbbr(e.planet) : e.planet[0] + e.planet.slice(1).toLowerCase()
-  if (e.event_type === 'INGRESS') return `${name} → ${e.to_state}${e.backward ? ' (back)' : e.reentry ? ' (re-entry)' : ''}`
-  return `${name} ${e.event_type === 'STATION_RETROGRADE' ? 'Rx' : 'D'}`
+  if (!short && e.label) return e.label
+  const a = planetAbbr(e.planet)
+  const b = e.other_planet ? planetAbbr(e.other_planet) : ''
+  const rashi = e.to_state.split(' (')[0]
+  switch (e.event_type) {
+    case 'INGRESS':
+    case 'NAKSHATRA_INGRESS':
+      return `${a}→${rashi}${e.backward ? ' (back)' : e.reentry ? ' (re)' : ''}`
+    case 'STATION_RETROGRADE':
+      return `${a} VAKRI`
+    case 'STATION_DIRECT':
+      return `${a} MARGI`
+    case 'YUTI':
+      return `${a}+${b}`
+    case 'DRISHTI':
+      return `${a}>${b} ${e.to_state}`
+    case 'COMBUSTION':
+      return `${a} ASTA`
+    case 'GRAHA_YUDDHA':
+      return `${a}×${b} YUDDHA`
+    case 'SOLAR_ECLIPSE':
+      return 'SURYA GRAHAN'
+    case 'LUNAR_ECLIPSE':
+      return 'CHANDRA GRAHAN'
+    case 'AMAVASYA':
+    case 'PURNIMA':
+    case 'YOGA':
+    case 'CLUSTER':
+      return e.to_state ? `${e.event_type === 'YOGA' || e.event_type === 'CLUSTER' ? '' : e.event_type + ' '}${e.to_state}`.trim() : e.event_type
+    default:
+      return e.label ?? `${a} ${e.event_type}`
+  }
+}
+
+/** A plain-words name for an event type, for tables. */
+export const EVENT_KIND: Record<string, string> = {
+  INGRESS: 'rashi ingress',
+  NAKSHATRA_INGRESS: 'nakshatra',
+  STATION_RETROGRADE: 'vakri',
+  STATION_DIRECT: 'margi',
+  YUTI: 'yuti',
+  DRISHTI: 'drishti',
+  COMBUSTION: 'asta',
+  GRAHA_YUDDHA: 'yuddha',
+  AMAVASYA: 'amavasya',
+  PURNIMA: 'purnima',
+  SOLAR_ECLIPSE: 'grahan',
+  LUNAR_ECLIPSE: 'grahan',
+  YOGA: 'yoga',
+  CLUSTER: 'cluster',
 }

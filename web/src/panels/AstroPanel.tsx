@@ -4,13 +4,14 @@ import type { SkyPosition } from '../api/types'
 import { Empty, Pill, QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
-import { day, daysFrom, hhmm, pct, pval, transitLabel } from '../lib/format'
+import { day, daysFrom, EVENT_KIND, hhmm, pct, pval, transitLabel } from '../lib/format'
 import { useTerminal } from '../state/store'
 import { ConfLabel, OutcomeTag } from './astro/labels'
+import { ModelTab } from './astro/ModelTab'
 import { PlaybookTab } from './astro/PlaybookTab'
 
-type Tab = 'SKY' | 'EVENTS' | 'PLAYBOOK' | 'CHOP'
-const TABS: Tab[] = ['SKY', 'EVENTS', 'PLAYBOOK', 'CHOP']
+type Tab = 'SKY' | 'EVENTS' | 'PLAYBOOK' | 'CHOP' | 'MODEL'
+const TABS: Tab[] = ['SKY', 'EVENTS', 'PLAYBOOK', 'CHOP', 'MODEL']
 
 export function AstroPanel({ hidden }: { hidden: boolean }) {
   const [tab, setTab] = useState<Tab>('PLAYBOOK')
@@ -18,7 +19,9 @@ export function AstroPanel({ hidden }: { hidden: boolean }) {
   return (
     <Panel
       code="ASTRO"
-      title={tab === 'PLAYBOOK' || tab === 'CHOP' ? `Transit research · ${ASSET_META[asset].name}` : 'Sky and transits'}
+      title={
+        tab === 'MODEL' ? `Vedic model · ${ASSET_META[asset].name}` : tab === 'PLAYBOOK' || tab === 'CHOP' ? `Transit research · ${ASSET_META[asset].name}` : 'Sky and transits (Vedic)'
+      }
       hidden={hidden}
       meta={
         <>
@@ -29,14 +32,16 @@ export function AstroPanel({ hidden }: { hidden: boolean }) {
     >
       <div className="astro-banner">
         <span>
-          Retrospective research, not a trading signal. Transit patterns are only trusted once they survive multiple-testing correction, and
-          nothing here sizes a trade. Positions come from NASA JPL's DE421 ephemeris.
+          Retrospective research, not a trading signal. Vedic rules throughout: sidereal zodiac (Lahiri / Chitrapaksha ayanamsa), the 9 grahas,
+          rashi drishti, yogas. Patterns are only trusted once they survive multiple-testing correction, and nothing here sizes a trade. Positions
+          come from NASA JPL's DE421 ephemeris.
         </span>
       </div>
       {tab === 'SKY' && <SkyTab />}
       {tab === 'EVENTS' && <EventsTab />}
       {tab === 'PLAYBOOK' && <PlaybookTab asset={asset} />}
       {tab === 'CHOP' && <ChopTab />}
+      {tab === 'MODEL' && <ModelTab asset={asset} />}
     </Panel>
   )
 }
@@ -51,21 +56,49 @@ function SkyTab() {
       <table className="tbl sky">
         <thead>
           <tr>
-            <th className="l">Body</th>
-            <th className="l">Sign</th>
+            <th className="l">Graha</th>
+            <th className="l">Rashi</th>
             <th>Degree</th>
-            <th className="l">Motion</th>
-            <th className="l">Next transit</th>
+            <th className="l">Nakshatra · pada</th>
+            <th className="l">State</th>
+            <th className="l">Next change</th>
             <th className="l">When</th>
           </tr>
         </thead>
         <tbody>
           {data.map((p: SkyPosition) => (
             <tr key={p.planet}>
-              <td className="l body">{p.planet}</td>
+              <td className="l body">{p.name}</td>
               <td className="l">{p.sign}</td>
               <td>{deg(p.degree)}</td>
-              <td className="l">{p.retrograde ? <span className="warn">RETROGRADE</span> : <span className="dim">direct</span>}</td>
+              <td className="l">
+                {p.nakshatra} · {p.pada}
+              </td>
+              <td className="l">
+                {[
+                  p.retrograde ? (
+                    <span key="v" className="warn">
+                      {p.planet === 'RAHU' || p.planet === 'KETU' ? 'vakri (always)' : 'VAKRI'}
+                    </span>
+                  ) : (
+                    <span key="m" className="dim">
+                      margi
+                    </span>
+                  ),
+                  p.combust && (
+                    <span key="a" className="warn">
+                      {' '}
+                      · ASTA
+                    </span>
+                  ),
+                  p.dignity && (
+                    <span key="d" className="hi">
+                      {' '}
+                      · {p.dignity.toUpperCase()}
+                    </span>
+                  ),
+                ]}
+              </td>
               <td className="l">{p.next_event ? transitLabel(p.next_event) : '—'}</td>
               <td className="l">
                 {p.next_event ? `${day(p.next_event.exact_time ?? p.next_event.date)} ${p.next_event.exact_time ? hhmm(p.next_event.exact_time) : ''} · ${daysFrom(p.next_event.date)}` : '—'}
@@ -98,14 +131,14 @@ function EventsTab() {
         </thead>
         <tbody>
           {data.map((v) => (
-            <tr key={`${v.event.planet}-${v.event.event_type}-${v.event.date}`} className={`${v.event.date.slice(0, 10) < today ? 'past' : ''} ${v === next ? 'next' : ''}`}>
+            <tr key={`${v.event.planet}-${v.event.other_planet}-${v.event.event_type}-${v.event.to_state}-${v.event.exact_time ?? v.event.date}`} className={`${v.event.date.slice(0, 10) < today ? 'past' : ''} ${v === next ? 'next' : ''}`}>
               <td className="l">
                 {day(v.event.date)} {new Date(v.event.date).getUTCFullYear()}
               </td>
               <td className="l">{daysFrom(v.event.date)}</td>
               <td className="l mid">{v.event.exact_time ? `${day(v.event.exact_time)} ${hhmm(v.event.exact_time)}` : '—'}</td>
               <td className="l body">{transitLabel(v.event)}</td>
-              <td className="l dim">{v.event.event_type === 'INGRESS' ? 'ingress' : 'station'}</td>
+              <td className="l dim">{EVENT_KIND[v.event.event_type] ?? v.event.event_type}</td>
               <td className="l">
                 {v.notable.length ? (
                   v.notable.map((n) => (
@@ -135,7 +168,7 @@ function ChopTab() {
     <>
       <div className="pbk-tools">
         <span className="dim">
-          Which transit states coincide with sideways markets. The honest sample is the number of separate episodes of a state, not its day count.
+          Which Vedic states (vakri, asta, rashi placements, yogas…) coincide with sideways markets. The honest sample is the number of separate episodes of a state, not its day count.
         </span>
         <Seg
           label="Show"

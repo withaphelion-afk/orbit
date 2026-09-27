@@ -27,6 +27,9 @@ export const useSuggestions = (enabled: boolean) =>
   useQuery({ queryKey: ['suggestions'], queryFn: api.suggestions, refetchInterval: 30_000, enabled })
 export const useJournal = (enabled: boolean) => useQuery({ queryKey: ['journal'], queryFn: api.journal, enabled })
 export const useDrift = (enabled: boolean) => useQuery({ queryKey: ['drift'], queryFn: api.drift, enabled })
+export const useBacktest = (enabled: boolean) => useQuery({ queryKey: ['backtest'], queryFn: api.backtest, enabled, refetchInterval: 30 * MIN })
+export const useCalibration = (enabled: boolean) => useQuery({ queryKey: ['calibration'], queryFn: api.calibration, enabled, refetchInterval: 30 * MIN })
+export const useModel = (a: Asset) => useQuery({ queryKey: ['model', a], queryFn: () => api.model(a), refetchInterval: 30 * MIN, retry: false })
 
 export function useDecide() {
   const qc = useQueryClient()

@@ -59,7 +59,7 @@ export function RunControl({ compact = false }: { compact?: boolean }) {
           <input type="checkbox" checked={refresh} onChange={(e) => setRefresh(e.target.checked)} disabled={!!running} /> Refresh data first
         </label>
         <label className="chk" title="Also re-run everything on 32 fake calendars to check the method isn't fooled by noise">
-          <input type="checkbox" checked={placebo} onChange={(e) => setPlacebo(e.target.checked)} disabled={!!running} /> Include placebo check (~12 min)
+          <input type="checkbox" checked={placebo} onChange={(e) => setPlacebo(e.target.checked)} disabled={!!running} /> Include placebo check (~40 min)
         </label>
       </div>
       {running ? (

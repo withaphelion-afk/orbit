@@ -2,10 +2,11 @@
 
     uv run python -m orbit.api
 
-Read-only over stored data (see store.py) plus a live price feed (live.py).
-Endpoints for layers that don't exist yet (strategy, journal, backtest)
-answer honestly: empty lists, 501 for writes, 404 for reports, and
-/api/system says which components are built so the UI can show why.
+Read-only over stored data (see store.py) plus a live price feed (live.py),
+except two writes: starting an analysis run, and logging your decision on a
+suggestion (which goes to the journal, never to an exchange). Reports that
+haven't been generated yet answer 404, and /api/system says which components
+exist so the UI can show why.
 """
 
 from __future__ import annotations
@@ -16,9 +17,10 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, WebSocket
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from orbit.config import settings
-from orbit.core.types import Asset, Candle, ConfidenceLabel, Direction, PatternResult, Signal
+from orbit.core.types import Asset, Candle, ConfidenceLabel, Decision, Direction, PatternResult, Planet, Signal, SpeedClass, TransitEventType
 from orbit.data.dates import today_utc, utc_day
 from orbit.api import store
 from orbit.api.live import LiveFeed
@@ -26,6 +28,10 @@ from orbit.analysis import jobs
 from orbit.analysis.jobs import AnalysisRun
 from orbit.api.schemas import (
     Components,
+    DecisionRequest,
+    DriftReport,
+    JournalRow,
+    SuggestionView,
     FeedStatus,
     LogLine,
     NotableFor,
@@ -45,10 +51,29 @@ from orbit.analysis.confidence import RANK
 from orbit.analysis.patterns import patterns_for_event
 from orbit.analysis.transit_events import event_label
 from orbit.runner.status import read_status
+from orbit.strategy.rsi_divergence import NAME as STRATEGY_NAME
+from orbit.vedic.patterns import speed_class
 
 ASSETS = [Asset.BTC, Asset.ETH, Asset.SOL, Asset.SILVER]
+WEB_DIST = settings.REPO_ROOT / "web" / "dist"
 LIVE_FRESH = timedelta(minutes=5)
-NOT_BUILT = "The strategy and journal layers aren't built yet, so there is nothing to decide on or log."
+
+
+def _journal_row(r) -> JournalRow:
+    expired = r.status == "expired"
+    entry = r.journal_entry()
+    if expired:
+        entry = entry.model_copy(update={"decision": Decision.SKIPPED, "notes": "No decision in time: expired, logged as skipped."})
+    skipped = expired or r.decision == Decision.SKIPPED
+    out = r.acted if r.decision in (Decision.TAKEN, Decision.MODIFIED) else r.paper
+    return JournalRow(
+        id=r.id,
+        decided_at=r.decided_at or r.created_at,
+        entry=entry,
+        expired=expired,
+        counterfactual_pnl=r.paper.return_pct if skipped and r.paper else None,
+        exit_reason=out.reason if out else None,
+    )
 
 
 def create_app(live: bool = True) -> FastAPI:
@@ -131,9 +156,25 @@ def create_app(live: bool = True) -> FastAPI:
 
     @app.get("/api/signals/{asset}", response_model=list[Signal])
     def signals(asset: Asset):
-        """Real signals that exist today: the days the regime reading turned BULL or BEAR."""
+        """Every RSI divergence in the history (dated to its confirmation bar), plus the days the regime turned BULL or BEAR."""
+        from orbit.strategy import rsi_divergence as strat
+
+        series = store.price_series(asset)
+        out = []
+        if len(series) > strat.RSI_PERIOD:
+            for d in strat.find_signals(series):
+                out.append(
+                    Signal(
+                        name="rsi_divergence",
+                        asset=asset,
+                        timestamp=datetime.fromisoformat(str(series.dates[d.signal_index])).replace(tzinfo=timezone.utc),
+                        direction=d.direction,
+                        strength=float(min(1.0, d.rsi_difference / 20)),
+                        reason=strat.reason(d, series),
+                    )
+                )
         by_day, scope = store.regime_by_day(asset)
-        out, prev = [], None
+        prev = None
         what = "BTC/ETH regime gate" if scope == "SHARED" else f"{asset.value} trend (50/200-day rule)"
         for d, v in sorted(by_day.items()):
             if prev is not None and v != prev and v in ("BULL", "BEAR"):
@@ -148,21 +189,28 @@ def create_app(live: bool = True) -> FastAPI:
                     )
                 )
             prev = v
-        return out
+        return sorted(out, key=lambda g: g.timestamp)
 
     # ------------------------------------------------------------ sky + transits
 
-    def notable(event) -> list[NotableFor]:
-        out = []
+    def rated_patterns() -> dict[Asset, dict[str, PatternResult]]:
+        """Each asset's patterns rated weak or better, by id (all a transit list needs to look up)."""
+        out = {}
         for asset in ASSETS:
             pb = store.playbook(asset)
-            if not pb:
-                continue
-            by_id = {p.pattern_id: p for p in pb.patterns}
+            if pb:
+                out[asset] = {p.pattern_id: p for p in pb.patterns if RANK[p.label] >= RANK[ConfidenceLabel.WEAK]}
+        return out
+
+    def notable(event, rated: dict[Asset, dict[str, PatternResult]] | None = None) -> list[NotableFor]:
+        rated = rated if rated is not None else rated_patterns()
+        out = []
+        pids = patterns_for_event(event)
+        for asset, by_id in rated.items():
             best = None
-            for pid in patterns_for_event(event):
+            for pid in pids:
                 r = by_id.get(pid)
-                if r and RANK[r.label] >= RANK[ConfidenceLabel.WEAK] and (best is None or RANK[r.label] > RANK[best.label]):
+                if r and (best is None or RANK[r.label] > RANK[best.label]):
                     best = r
             if best:
                 out.append(NotableFor(asset=asset, pattern_id=best.pattern_id, label=best.label, dominant_outcome=best.dominant_outcome))
@@ -170,28 +218,36 @@ def create_app(live: bool = True) -> FastAPI:
 
     @app.get("/api/sky", response_model=list[SkyPosition])
     def sky():
-        planets = store.planets()
-        if not planets:
-            raise HTTPException(404, "No ephemeris stored. Run scripts/fetch_ephemeris.py.")
-        from orbit.data.ephemeris import ZODIAC_SIGNS
+        """The 9 grahas right now, in the sidereal zodiac (Vedic rules)."""
+        from orbit.vedic import zodiac as z
+        from orbit.vedic.sky import sidereal_longitude, speed, tt_of, wrap
 
-        today = np.datetime64(today_utc().replace(tzinfo=None), "D")
-        events = store.transit_events()
+        now = datetime.now(timezone.utc)
+        tt = tt_of(now)
+        sun = float(sidereal_longitude(Planet.SUN, tt)[0])
+        upcoming = [e for e in store.transit_events() if e.exact_time and e.exact_time >= now
+                    and e.event_type in (TransitEventType.INGRESS, TransitEventType.STATION_RETROGRADE, TransitEventType.STATION_DIRECT)]
         out = []
-        for planet, ps in planets.items():
-            i = int(np.searchsorted(ps.dates, today))
-            if i >= len(ps.dates):
-                continue
-            longitude = float(ps.longitude[i])
-            upcoming = next((e for e in events if e.planet == planet and e.date >= today_utc()), None)
+        for g in z.GRAHAS:
+            lon = float(sidereal_longitude(g, tt)[0])
+            rashi = int(lon // 30)
+            nak = int(lon // z.NAKSHATRA_SPAN)
+            vakri = g in z.NODES or float(speed(g, tt)[0]) < 0
+            orb = (z.COMBUSTION_ORB_VAKRI if vakri else {}).get(g, z.COMBUSTION_ORB.get(g))
+            mover = Planet.RAHU if g == Planet.KETU else g
             out.append(
                 SkyPosition(
-                    planet=planet,
-                    longitude=longitude,
-                    sign=ZODIAC_SIGNS[int(ps.sign_index[i])],
-                    degree=longitude % 30,
-                    retrograde=bool(ps.retrograde[i]),
-                    next_event=upcoming,
+                    planet=g,
+                    name=z.NAMES[g],
+                    longitude=lon,
+                    sign=z.rashi_label(rashi),
+                    degree=lon % 30,
+                    nakshatra=z.NAKSHATRAS[nak],
+                    pada=int((lon % z.NAKSHATRA_SPAN) // (z.NAKSHATRA_SPAN / 4)) + 1,
+                    retrograde=vakri,
+                    combust=bool(orb and abs(float(wrap(lon - sun))) < orb),
+                    dignity=z.dignity(g, rashi),
+                    next_event=next((e for e in upcoming if e.planet == mover), None),
                 )
             )
         return out
@@ -204,10 +260,11 @@ def create_app(live: bool = True) -> FastAPI:
     ):
         lo = utc_day(start) if start else today_utc() - timedelta(days=90)
         hi = utc_day(end) if end else today_utc() + timedelta(days=180)
+        rated = rated_patterns()
         return [
-            TransitView(event=e, label=event_label(e), notable=notable(e))
+            TransitView(event=e, label=event_label(e), notable=notable(e, rated))
             for e in store.transit_events()
-            if lo <= e.date <= hi and (include_moon or e.planet.value != "MOON")
+            if lo <= e.date <= hi and (include_moon or speed_class(e) != SpeedClass.LUNAR)
         ]
 
     # ------------------------------------------------------------ playbook
@@ -251,23 +308,88 @@ def create_app(live: bool = True) -> FastAPI:
             raise HTTPException(404, f"No pattern {pattern_id} for {asset.value}.")
         return r
 
-    # ------------------------------------------------------------ layers not built yet
+    # ------------------------------------------------------------ strategy, journal, backtest
 
-    @app.get("/api/suggestions")
+    @app.get("/api/suggestions", response_model=list[SuggestionView])
     def suggestions():
-        return []
+        """Suggestions waiting for your decision, newest first."""
+        from orbit.journal import store as journal_store
 
-    @app.post("/api/suggestions/{suggestion_id}/decision", status_code=501)
-    def decide(suggestion_id: str):
-        raise HTTPException(501, NOT_BUILT)
+        pending = [r for r in journal_store.load() if r.status == "pending"]
+        return [
+            SuggestionView(id=r.id, created_at=r.created_at, risk_reward=r.risk_reward, suggestion=r.suggestion)
+            for r in sorted(pending, key=lambda r: r.created_at, reverse=True)
+        ]
 
-    @app.get("/api/journal")
+    @app.post("/api/suggestions/{suggestion_id}/decision", response_model=JournalRow)
+    def decide(suggestion_id: str, req: DecisionRequest):
+        """Log what you did with a suggestion. This writes the journal; it never places an order."""
+        from orbit.strategy import live as live_strategy
+
+        if req.decision == Decision.MODIFIED and None in (req.entry_price, req.stop_loss, req.take_profit):
+            raise HTTPException(422, "MODIFIED needs entry_price, stop_loss and take_profit.")
+        try:
+            rec = live_strategy.decide(suggestion_id, req.decision, req.notes, req.entry_price, req.stop_loss, req.take_profit)
+        except KeyError:
+            raise HTTPException(404, f"No suggestion {suggestion_id}.")
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        return _journal_row(rec)
+
+    @app.get("/api/journal", response_model=list[JournalRow])
     def journal():
-        return []
+        """Every suggestion you decided on, plus the ones that expired undecided, newest first."""
+        from orbit.journal import store as journal_store
 
-    @app.get("/api/drift")
+        rows = [_journal_row(r) for r in journal_store.load() if r.status != "pending"]
+        return sorted(rows, key=lambda r: r.decided_at, reverse=True)
+
+    @app.get("/api/drift", response_model=DriftReport)
     def drift():
-        raise HTTPException(404, "The backtest layer isn't built yet, so there is no expected performance to compare against.")
+        from orbit.backtest.drift import report
+
+        rep = report()
+        if rep is None:
+            raise HTTPException(404, "No backtest yet, so there is no expected performance to compare against. Run the analysis.")
+        return rep
+
+    @app.get("/api/backtest")
+    def backtest_summary():
+        from orbit.backtest.engine import load
+
+        rep = load()
+        if rep is None:
+            raise HTTPException(404, "No backtest yet. Run the analysis (it backtests the strategy every run).")
+        return rep
+
+    @app.get("/api/backtest/{asset}")
+    def backtest_asset(asset: Asset):
+        from orbit.backtest.engine import load
+
+        rep = load(asset.value)
+        if rep is None:
+            raise HTTPException(404, f"No backtest for {asset.value} yet.")
+        return rep
+
+    @app.get("/api/calibration")
+    def calibration():
+        """The feedback loop: how confidence is set, and whether it has proven itself out-of-sample."""
+        from orbit.strategy.calibrate import load
+
+        rep = load()
+        if rep is None:
+            raise HTTPException(404, "The feedback loop hasn't been trained yet. Run the analysis.")
+        return {k: v for k, v in rep.items() if k != "model"}
+
+    @app.get("/api/model/{asset}")
+    def astro_model(asset: Asset):
+        """Does knowing the Vedic sky improve a price-only forecast? Walk-forward, with controls."""
+        from orbit.analysis.model import load
+
+        rep = load(asset)
+        if rep is None:
+            raise HTTPException(404, f"The Vedic model for {asset.value} hasn't been evaluated yet. Run the analysis.")
+        return rep
 
     # ------------------------------------------------------------ system
 
@@ -302,8 +424,10 @@ def create_app(live: bool = True) -> FastAPI:
         meta = store.playbook_meta()
         return SystemStatus(
             runner=runner,
-            components=Components(runner=beat is not None, playbook=meta is not None, strategy=False, journal=False, backtest=False, alerts=False),
-            strategy=None,
+            components=Components(
+                runner=beat is not None, playbook=meta is not None, strategy=True, journal=True, backtest=store.backtest_exists(), alerts=False
+            ),
+            strategy=STRATEGY_NAME,
             timeframe=settings.TIMEFRAME,
             auto_execution=False,
             feeds=feeds,
@@ -381,6 +505,11 @@ def create_app(live: bool = True) -> FastAPI:
     @app.websocket("/ws")
     async def ws(socket: WebSocket):
         await feed.serve(socket)
+
+    # The built web terminal (npm run build -> web/dist), so everyday use is one
+    # address and no dev server. Mounted last so every /api and /ws route wins.
+    if WEB_DIST.is_dir():
+        app.mount("/", StaticFiles(directory=WEB_DIST, html=True), name="web")
 
     return app
 

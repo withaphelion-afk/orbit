@@ -23,11 +23,10 @@ from orbit.data.history import REPORT_PATH
 from orbit.data.storage import _csv_path, load_candles
 from orbit.features.regime import VALUE_TO_REGIME, regime_gate_by_day, trend_values
 from orbit.analysis.playbook import ANALYSIS_DIR
-from orbit.analysis.series import load_planet_series
-from orbit.analysis.transit_events import detect_all
+from orbit.vedic.events import EVENTS_CACHE as VEDIC_EVENTS
+from orbit.vedic.events import load_events as load_vedic_events
 
 LOG_PATH = DATA_DIR / "logs" / "runner.log"
-EPHEMERIS_DIR = DATA_DIR / "ephemeris"
 _LOG_LINE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ \[(\w+)\] (.*)$")
 
 _cache: dict[str, tuple[float, Any]] = {}
@@ -57,6 +56,19 @@ def completed(asset: Asset) -> list[Candle]:
     return [c for c in candles(asset) if c.timestamp < today]
 
 
+def price_series(asset: Asset):
+    """Completed daily bars as arrays (analysis/series.py), for the strategy's signals."""
+    from orbit.analysis.series import load_price_series
+
+    return _cached(f"series:{asset.value}:{today_utc().date()}", [_csv_path(asset, TIMEFRAME)], lambda: load_price_series(asset))
+
+
+def backtest_exists() -> bool:
+    from orbit.backtest.engine import BACKTEST_DIR
+
+    return (BACKTEST_DIR / "summary.json").exists()
+
+
 def regime_by_day(asset: Asset) -> tuple[dict[datetime, str], str]:
     """{day: BULL/BEAR/CHOPPY} and its scope. Crypto reads the shared BTC/ETH gate;
     silver has no gate, so it reads its own trend under the same rule."""
@@ -79,27 +91,19 @@ def history_report() -> dict:
     return _cached("report", [REPORT_PATH], lambda: json.loads(REPORT_PATH.read_text(encoding="utf-8")) if REPORT_PATH.exists() else {})
 
 
-def _ephemeris_paths() -> list[Path]:
-    return list(EPHEMERIS_DIR.glob("*.csv"))
-
-
-def planets():
-    return _cached("planets", _ephemeris_paths(), load_planet_series)
-
-
 EVENTS_PATH = ANALYSIS_DIR / "events.json"
 
 
 def transit_events() -> list[TransitEvent]:
-    """Events with exact moments, as saved by the last analysis run; straight from
-    the ephemeris (day precision only) if no run has happened yet."""
+    """Vedic events with exact moments, as saved by the last analysis run, or
+    straight from the Vedic detector if no run has happened yet."""
     if EVENTS_PATH.exists():
         return _cached(
             "events",
             [EVENTS_PATH],
             lambda: [TransitEvent.model_validate(e) for e in json.loads(EVENTS_PATH.read_text(encoding="utf-8"))],
         )
-    return _cached("events-raw", _ephemeris_paths(), lambda: detect_all(planets()))
+    return _cached("events-vedic", [VEDIC_EVENTS], load_vedic_events)
 
 
 def playbook(asset: Asset) -> AssetPlaybook | None:

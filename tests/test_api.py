@@ -25,12 +25,20 @@ def _bars(asset: Asset, days: int, start_price: float = 100.0) -> list[Candle]:
     ]
 
 
-def test_unbuilt_layers_answer_honestly(client):
+def test_empty_journal_and_no_backtest_answer_honestly(client, monkeypatch, tmp_path):
+    from orbit.backtest import drift as drift_module
+    from orbit.backtest import engine
+    from orbit.journal import store as journal_store
+
+    monkeypatch.setattr(journal_store, "PATH", tmp_path / "suggestions.json")
+    monkeypatch.setattr(engine, "BACKTEST_DIR", tmp_path / "backtest")
+    monkeypatch.setattr(drift_module, "load_backtest", lambda: None)
     assert client.get("/api/suggestions").json() == []
     assert client.get("/api/journal").json() == []
-    assert client.post("/api/suggestions/abc/decision").status_code == 501
+    assert client.post("/api/suggestions/abc/decision", json={"decision": "TAKEN"}).status_code == 404
     drift = client.get("/api/drift")
     assert drift.status_code == 404 and "backtest" in drift.json()["detail"]
+    assert client.get("/api/backtest").status_code == 404
 
 
 def test_missing_history_is_a_clear_404(client, monkeypatch):
@@ -41,13 +49,15 @@ def test_missing_history_is_a_clear_404(client, monkeypatch):
 
 def test_system_reports_never_run_and_components(client, monkeypatch):
     monkeypatch.setattr(app_module, "read_status", lambda: None)
+    monkeypatch.setattr(store, "backtest_exists", lambda: False)
     monkeypatch.setattr(store, "candles", lambda asset: [])
     monkeypatch.setattr(store, "history_report", lambda: {})
     monkeypatch.setattr(store, "playbook_meta", lambda: None)
     monkeypatch.setattr(store, "runner_log", lambda: [])
     body = client.get("/api/system").json()
     assert body["runner"]["state"] == "NEVER_RUN"
-    assert body["components"] == {"runner": False, "playbook": False, "strategy": False, "journal": False, "backtest": False, "alerts": False}
+    assert body["components"] == {"runner": False, "playbook": False, "strategy": True, "journal": True, "backtest": False, "alerts": False}
+    assert body["strategy"] == "RSI(14) divergence"
     assert body["auto_execution"] is False
 
 
