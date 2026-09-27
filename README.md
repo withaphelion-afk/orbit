@@ -11,23 +11,51 @@ This project doubles as a learning project. Every module is built to be understa
 - **Self-correcting** — the system tracks its own live performance against what backtesting predicted, and flags itself (or scales down) when reality drifts from expectation.
 - **Suggestions, not autopilot** — every trade idea comes with its reasoning, for you to approve, until auto-execution is explicitly turned on later.
 
-## Project layout (planned)
+## Project layout
 
 ```
 orbit/
-  data/          # scripts to fetch and store price + ephemeris data
-  features/      # turning raw price data into signals (indicators, regimes, astro transits)
-  strategy/      # the one active strategy's entry/exit/risk rules
-  backtest/      # tests the strategy against historical data before it ever goes live
-  journal/       # logs every suggestion, your decision, and the outcome
-  runner/        # the 24/7 process that ties it all together and sends alerts
+  src/orbit/
+    data/          # fetch + store price & ephemeris data
+    features/      # raw data -> signals (indicators, regime, astro transits)
+    strategy/       # the one active strategy: entry/exit/risk rules
+    backtest/       # historical simulation + walk-forward validation
+    journal/        # trade log schema + read/write
+    runner/          # 24/7 loop: schedule -> evaluate -> alert
+    alerts/          # Telegram/console notifier
+    config/          # settings (assets, timeframe, secrets via .env)
+    core/            # shared types used everywhere (Candle, Signal, Trade, ...)
+  tests/             # mirrors src/orbit structure
+  scripts/           # one-off manual scripts
+  data/              # local cache of downloaded candles (gitignored)
 ```
 
-Nothing above exists yet — we're building it piece by piece, starting with the data layer.
+Most modules are still empty stubs — see Status below for what's actually built.
 
-## Where to learn more
+## Where to learn more (context for contributors, including other Claude sessions)
 
-The full plan — architecture, build phases, the astro-transit research track, open decisions — lives in the shared project doc: [Orbit — Systematic Trading Strategy](https://claude.ai/code/artifact/d1aae7ea-a032-4196-992d-705ff5b70a37)
+Before doing any work here, read these in order:
+
+1. **This README** — what the project is and how it's laid out.
+2. **The shared project doc** — architecture, build phases, the astro-transit research track, and open decisions: [Orbit — Systematic Trading Strategy](https://claude.ai/code/artifact/d1aae7ea-a032-4196-992d-705ff5b70a37). This is the single source of truth for planning — check it before starting work and update it when a phase's status changes, instead of creating a new doc.
+3. **`git log`** — recent commits explain what's actually been built vs. planned.
+4. **`src/orbit/core/types.py`** — the shared vocabulary (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`) every module is built around.
+
+## Getting started
+
+```bash
+git clone https://github.com/withaphelion-afk/orbit.git
+cd orbit
+uv sync --extra dev
+uv run pytest -q
+```
+
+That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
+
+Design principles to keep in mind while contributing (see the doc for the full reasoning):
+- One strategy at a time — don't build a plugin system for hypothetical future strategies.
+- Config lives in `config/settings.py`, not hardcoded in modules.
+- Keep modules independently testable: pure functions where possible (`data/` returns candles, `features/` turns candles into signals, `strategy/` turns signals into trade suggestions).
 
 ## Status
 
