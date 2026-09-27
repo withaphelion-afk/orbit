@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from orbit.core.types import Asset, Candle
-from orbit.data.dates import from_unix
+from orbit.data.dates import bar_time
 from orbit.data.http import get_json
 
 BASE_URL = "https://api.binance.com/api/v3/klines"
@@ -54,17 +54,18 @@ def _get(asset: Asset, params: dict) -> list[Candle]:
     symbol = SYMBOLS.get(asset)
     if symbol is None:
         raise ValueError(f"{asset} is not a Binance-traded asset")
-    return [_kline_to_candle(asset, symbol, kline) for kline in get_json(BASE_URL, {"symbol": symbol, **params})]
+    timeframe = params.get("interval", "1d")
+    return [_kline_to_candle(asset, symbol, kline, timeframe) for kline in get_json(BASE_URL, {"symbol": symbol, **params})]
 
 
-def _kline_to_candle(asset: Asset, symbol: str, kline: list) -> Candle:
+def _kline_to_candle(asset: Asset, symbol: str, kline: list, timeframe: str = "1d") -> Candle:
     """Binance returns each kline as a fixed-position list, not a dict:
     [open_time, open, high, low, close, volume, close_time, ...].
     We only need the first six fields.
     """
     return Candle(
         asset=asset,
-        timestamp=from_unix(kline[0] / 1000),
+        timestamp=bar_time(kline[0] / 1000, timeframe),
         open=float(kline[1]),
         high=float(kline[2]),
         low=float(kline[3]),

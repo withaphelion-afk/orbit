@@ -28,13 +28,13 @@ RUNNER_INTERVAL_SECONDS = 3600  # 1 hour
 
 # --- Price history -----------------------------------------------------------
 # Earliest date kept per asset. Full histories are stitched from an older USD
-# venue plus Binance (see data/history.py). BTC before 2013 is left out on
+# venue plus Binance, silver from Dukascopy spot (see data/history.py). BTC before 2013 is left out on
 # purpose: volumes were tiny and single-venue prices were erratic.
 HISTORY_START = {
     "BTC": "2013-01-01",
     "ETH": "2016-05-18",
     "SOL": "2020-08-11",
-    "SILVER": "2000-08-30",
+    "SILVER": "2003-05-05",  # Dukascopy spot XAG/USD; earlier years are too thin to use
 }
 # Stitching refuses to join two venues whose closes disagree by more than this
 # (median absolute difference over their overlap).
@@ -63,7 +63,17 @@ NOMINAL_ALPHA = 0.05
 MIN_SHIFT_GAP_DAYS = 30  # circular shifts this close to the real calendar are skipped
 UNIFORM_NULL_DRAWS = 2000
 SIDEWAYS_HORIZONS = [10, 20]
-INCLUDE_MOON = True  # tested as its own family so it can't swamp the rest
+INCLUDE_MOON = True
+# Hourly drill-down from each transit's exact moment (analysis/timing.py).
+TIMING_HORIZONS_HOURS = [6, 24, 72]
+TIMING_ATR_HOURS = 24  # ATR window, in hourly bars, for the hourly outcome labels
+TIMING_MIN_SHIFT_GAP_HOURS = 720  # circular shifts within 30 days of the real calendar are skipped
+TIMING_MAX_WINDOW_DAYS = 20  # longest window the per-occurrence path looks at
+
+# --- Scheduled analysis (runner) -----------------------------------------------
+ANALYSIS_SCHEDULE_ENABLED = True
+ANALYSIS_DAILY_AT_UTC = "00:30"  # after the 00:00 UTC daily close
+PLACEBO_WEEKDAY = 6  # Sunday's scheduled run also runs the placebo check (0 = Monday)
 
 # --- API server (python -m orbit.api) ----------------------------------------
 API_HOST = os.getenv("ORBIT_API_HOST", "127.0.0.1")
