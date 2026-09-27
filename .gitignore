@@ -15,3 +15,8 @@ data/analysis/
 data/*.json
 data/*.tmp
 data/cache/
+# Machine-local state: each PC keeps its own (see README "Running Orbit")
+data/run/
+data/journal/
+data/strategy/
+data/vedic/
