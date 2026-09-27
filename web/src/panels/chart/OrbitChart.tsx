@@ -102,7 +102,12 @@ export function OrbitChart({ asset, candles, signals, transits, pending }: Props
   // Data.
   useEffect(() => {
     const a = api.current
-    if (!a || !candles.length) return
+    if (!a) return
+    if (!candles.length) {
+      // Switching asset: forget the old last bar so the new asset's ticks can't land on it.
+      lastBar.current = null
+      return
+    }
     const th = readTheme()
     const bars = candles.map((c) => ({ time: ts(c.timestamp), open: c.open, high: c.high, low: c.low, close: c.close }))
     a.candles.setData(bars)
