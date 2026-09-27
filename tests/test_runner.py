@@ -28,7 +28,7 @@ def test_run_forever_survives_a_failing_cycle(monkeypatch, caplog, tmp_path):
 
     with caplog.at_level(logging.ERROR, logger="orbit.runner"):
         with pytest.raises(_StopLoop):
-            loop.run_forever(interval_seconds=0)
+            loop.run_forever(interval_seconds=0, schedule_analysis=False)
 
     # The failure was logged, and the loop reached a second cycle instead of dying.
     assert call_count["n"] == 2

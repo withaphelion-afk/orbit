@@ -17,7 +17,7 @@ from typing import Any, Callable
 import numpy as np
 
 from orbit.config.settings import DATA_DIR, TIMEFRAME
-from orbit.core.types import Asset, AssetPlaybook, Candle
+from orbit.core.types import Asset, AssetPlaybook, Candle, TransitEvent
 from orbit.data.dates import today_utc
 from orbit.data.history import REPORT_PATH
 from orbit.data.storage import _csv_path, load_candles
@@ -47,8 +47,8 @@ def _cached(key: str, paths: list[Path], build: Callable[[], Any]) -> Any:
     return value
 
 
-def candles(asset: Asset) -> list[Candle]:
-    return _cached(f"candles:{asset.value}", [_csv_path(asset, TIMEFRAME)], lambda: load_candles(asset, TIMEFRAME))
+def candles(asset: Asset, timeframe: str = TIMEFRAME) -> list[Candle]:
+    return _cached(f"candles:{asset.value}:{timeframe}", [_csv_path(asset, timeframe)], lambda: load_candles(asset, timeframe))
 
 
 def completed(asset: Asset) -> list[Candle]:
@@ -87,8 +87,19 @@ def planets():
     return _cached("planets", _ephemeris_paths(), load_planet_series)
 
 
-def transit_events():
-    return _cached("events", _ephemeris_paths(), lambda: detect_all(planets()))
+EVENTS_PATH = ANALYSIS_DIR / "events.json"
+
+
+def transit_events() -> list[TransitEvent]:
+    """Events with exact moments, as saved by the last analysis run; straight from
+    the ephemeris (day precision only) if no run has happened yet."""
+    if EVENTS_PATH.exists():
+        return _cached(
+            "events",
+            [EVENTS_PATH],
+            lambda: [TransitEvent.model_validate(e) for e in json.loads(EVENTS_PATH.read_text(encoding="utf-8"))],
+        )
+    return _cached("events-raw", _ephemeris_paths(), lambda: detect_all(planets()))
 
 
 def playbook(asset: Asset) -> AssetPlaybook | None:
