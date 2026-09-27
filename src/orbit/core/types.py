@@ -37,6 +37,18 @@ class Direction(str, Enum):
     SHORT = "SHORT"
 
 
+class Regime(str, Enum):
+    """The shared market environment, computed from BTC/ETH trend + volatility.
+
+    Gates whether per-asset entries are even considered — see
+    features/regime.py for how this is derived.
+    """
+
+    BULL = "BULL"
+    BEAR = "BEAR"
+    CHOPPY = "CHOPPY"  # no clear trend — regime gate blocks new entries
+
+
 class Signal(BaseModel):
     """One piece of evidence produced by a feature (technical, regime, astro, ...)."""
 
