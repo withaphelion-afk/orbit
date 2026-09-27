@@ -96,13 +96,16 @@ EVENTS_PATH = ANALYSIS_DIR / "events.json"
 
 def transit_events() -> list[TransitEvent]:
     """Vedic events with exact moments, as saved by the last analysis run, or
-    straight from the Vedic detector if no run has happened yet."""
+    straight from the Vedic detector if no run has happened yet (or the last
+    run predates the switch to Vedic rules: its events have no labels)."""
     if EVENTS_PATH.exists():
-        return _cached(
+        saved = _cached(
             "events",
             [EVENTS_PATH],
             lambda: [TransitEvent.model_validate(e) for e in json.loads(EVENTS_PATH.read_text(encoding="utf-8"))],
         )
+        if saved and all(e.label for e in saved[:50]):
+            return saved
     return _cached("events-vedic", [VEDIC_EVENTS], load_vedic_events)
 
 

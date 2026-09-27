@@ -119,3 +119,19 @@ def test_intraday_window(client, monkeypatch):
     monkeypatch.setattr(store, "candles", lambda asset, timeframe="1d": bars if timeframe == "1h" else [])
     r = client.get("/api/intraday/BTC", params={"at": "2026-01-02T00:30:00Z", "before_hours": 2, "after_hours": 3})
     assert [c["timestamp"][11:13] for c in r.json()] == ["23", "00", "01", "02", "03"]
+
+
+def test_pre_vedic_saved_events_fall_back_to_the_vedic_detector(monkeypatch, tmp_path):
+    """A machine whose last analysis run predates the Vedic switch must not serve its old tropical events."""
+    from orbit.core.types import Planet, TransitEvent, TransitEventType
+
+    old = tmp_path / "events.json"
+    old.write_text('[{"planet": "MARS", "event_type": "INGRESS", "date": "2025-01-01T00:00:00Z", "from_state": "Aries", "to_state": "Taurus"}]',
+                   encoding="utf-8")
+    vedic = [TransitEvent(planet=Planet.SATURN, event_type=TransitEventType.INGRESS, date=datetime(2025, 3, 29, tzinfo=timezone.utc),
+                          from_state="Kumbha", to_state="Meena", label="Shani (Saturn) enters Meena (Pisces)")]
+    monkeypatch.setattr(store, "EVENTS_PATH", old)
+    monkeypatch.setattr(store, "VEDIC_EVENTS", tmp_path / "vedic.json")
+    monkeypatch.setattr(store, "load_vedic_events", lambda: vedic)
+    monkeypatch.setattr(store, "_cache", {})
+    assert store.transit_events() == vedic
