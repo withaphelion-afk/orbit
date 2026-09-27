@@ -22,6 +22,8 @@ from orbit.core.types import Asset, Candle, ConfidenceLabel, Direction, PatternR
 from orbit.data.dates import today_utc, utc_day
 from orbit.api import store
 from orbit.api.live import LiveFeed
+from orbit.analysis import jobs
+from orbit.analysis.jobs import AnalysisRun
 from orbit.api.schemas import (
     Components,
     FeedStatus,
@@ -33,6 +35,8 @@ from orbit.api.schemas import (
     Quote,
     RegimeReading,
     RunnerStatus,
+    RunRequest,
+    ScheduleView,
     SkyPosition,
     SystemStatus,
     TransitView,
@@ -235,7 +239,7 @@ def create_app(live: bool = True) -> FastAPI:
         if not pb:
             raise HTTPException(404, f"No playbook for {asset.value} yet. Run scripts/build_playbook.py.")
         return PlaybookView(
-            **pb.model_dump(include={"asset", "generated_at", "history_start", "history_end", "bars", "sideways"}),
+            **pb.model_dump(include={"asset", "generated_at", "history_start", "history_end", "bars", "hourly_start", "hourly_bars", "sideways"}),
             patterns=[_summary(r) for r in pb.patterns],
         )
 
@@ -316,6 +320,63 @@ def create_app(live: bool = True) -> FastAPI:
             },
             playbook_generated_at=meta["generated_at"] if meta else None,
         )
+
+    # ------------------------------------------------------------ analysis runs
+
+    @app.post("/api/analysis/runs", status_code=202, response_model=AnalysisRun)
+    def start_run(req: RunRequest):
+        try:
+            return jobs.start("manual", include_placebo=req.placebo, refresh_data=req.refresh)
+        except jobs.AlreadyRunning as exc:
+            raise HTTPException(409, f"A run is already {exc.run.status} (started {exc.run.created_at:%H:%M} UTC). Wait for it to finish.")
+
+    @app.get("/api/analysis/runs", response_model=list[AnalysisRun])
+    def list_runs(limit: int = Query(20, ge=1, le=100)):
+        return [r.model_copy(update={"log": r.log[-40:]}) for r in jobs.list_runs(limit)]
+
+    @app.get("/api/analysis/runs/current", response_model=AnalysisRun | None)
+    def current_run():
+        return jobs.current()
+
+    @app.get("/api/analysis/runs/{run_id}", response_model=AnalysisRun)
+    def get_run(run_id: str):
+        run = jobs.load(run_id)
+        if not run:
+            raise HTTPException(404, f"No analysis run {run_id}.")
+        return run
+
+    @app.get("/api/analysis/schedule", response_model=ScheduleView)
+    def analysis_schedule():
+        beat = read_status() or {}
+        last = jobs.last_successful()
+        return ScheduleView(
+            enabled=settings.ANALYSIS_SCHEDULE_ENABLED,
+            daily_at_utc=settings.ANALYSIS_DAILY_AT_UTC,
+            placebo_weekday=settings.PLACEBO_WEEKDAY,
+            next_at=beat.get("next_analysis_at"),
+            runner_running=beat != {},
+            last_success_at=last.finished_at if last else None,
+            last_success_trigger=last.trigger if last else None,
+        )
+
+    # ------------------------------------------------------------ hourly drill-down
+
+    @app.get("/api/intraday/{asset}", response_model=list[Candle])
+    def intraday(
+        asset: Asset,
+        at: datetime = Query(..., description="centre of the window, e.g. a transit's exact moment"),
+        before_hours: int = Query(72, ge=0, le=24 * 30),
+        after_hours: int = Query(24 * 10, ge=1, le=24 * 60),
+    ):
+        bars = store.candles(asset, "1h")
+        if not bars:
+            raise HTTPException(404, f"No hourly history for {asset.value} yet. Run scripts/fetch_data.py (silver: scripts/backfill_silver.py).")
+        at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+        lo, hi = at - timedelta(hours=before_hours), at + timedelta(hours=after_hours)
+        import bisect
+
+        times = [c.timestamp for c in bars]
+        return bars[bisect.bisect_left(times, lo) : bisect.bisect_right(times, hi)]
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket):

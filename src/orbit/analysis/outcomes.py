@@ -63,21 +63,17 @@ class HorizonOutcomes:
         return float(np.mean(v == code)) if len(v) else float("nan")
 
 
-def label_outcomes(series: PriceSeries, horizon: int) -> HorizonOutcomes:
+def label_outcomes(series: PriceSeries, horizon: int, atr_window: int = ATR_WINDOW) -> HorizonOutcomes:
     n = len(series)
     close, high, low = series.close, series.high, series.low
     fwd = np.full(n, np.nan)
     disp = np.full(n, np.nan)
     rng = np.full(n, np.nan)
-    atr = rolling_mean(true_range(high, low, close), ATR_WINDOW)
-    if n > horizon:
-        fwd[: n - horizon] = close[horizon:] / close[: n - horizon] - 1
-        scale = atr[: n - horizon] * np.sqrt(horizon)
-        disp[: n - horizon] = np.abs(close[horizon:] - close[: n - horizon]) / scale
-        # High-low range over bars t+1 .. t+h.
-        win_high = np.lib.stride_tricks.sliding_window_view(high[1:], horizon).max(axis=1)
-        win_low = np.lib.stride_tricks.sliding_window_view(low[1:], horizon).min(axis=1)
-        rng[: n - horizon] = (win_high[: n - horizon] - win_low[: n - horizon]) / scale
+    atr = rolling_mean(true_range(high, low, close), atr_window)
+    # Zero-range stretches (flat hours in quiet markets) give ATR 0; their ratios come out
+    # inf/NaN and drop out of the labels below, so the divide warnings are just noise.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        _fill(fwd, disp, rng, close, high, low, atr, n, horizon)
 
     defined = ~np.isnan(fwd) & ~np.isnan(disp)
     idx = np.flatnonzero(defined)
@@ -105,6 +101,19 @@ def label_outcomes(series: PriceSeries, horizon: int) -> HorizonOutcomes:
         end=int(idx[-1]) + 1,
         thresholds={"big_up_return": up, "big_down_return": down, "sideways_max_displacement": disp_max, "sideways_min_range": range_min},
     )
+
+
+def _fill(fwd, disp, rng, close, high, low, atr, n, horizon) -> None:
+    """Forward return, ATR-normalised displacement and range for every bar with a full window."""
+    if n <= horizon:
+        return
+    fwd[: n - horizon] = close[horizon:] / close[: n - horizon] - 1
+    scale = atr[: n - horizon] * np.sqrt(horizon)
+    disp[: n - horizon] = np.abs(close[horizon:] - close[: n - horizon]) / scale
+    # High-low range over bars t+1 .. t+h.
+    win_high = np.lib.stride_tricks.sliding_window_view(high[1:], horizon).max(axis=1)
+    win_low = np.lib.stride_tricks.sliding_window_view(low[1:], horizon).min(axis=1)
+    rng[: n - horizon] = (win_high[: n - horizon] - win_low[: n - horizon]) / scale
 
 
 def bar_index_for(dates: np.ndarray, day: np.datetime64, max_gap_days: int = 3) -> int | None:

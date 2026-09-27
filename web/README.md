@@ -19,11 +19,12 @@ first. From the repo root:
 
 ```bash
 uv sync --extra dev
-uv run python scripts/fetch_data.py        # first run builds full price history (~30s)
+uv run python scripts/fetch_data.py        # first run builds full daily + hourly history (~8 min)
+uv run python scripts/backfill_silver.py   # one-time spot-silver download (throttled; resumable)
 uv run python scripts/fetch_ephemeris.py   # 60 years back, 2 ahead
-uv run python scripts/build_playbook.py    # transit playbook (~25s)
+uv run python scripts/build_playbook.py    # transit playbook (~1.5 min); or press RUN ANALYSIS in the UI
 uv run python -m orbit.api                 # API on http://127.0.0.1:8000
-uv run python -m orbit.runner.loop         # optional: keeps data fresh every hour
+uv run python -m orbit.runner.loop         # keeps data fresh every hour and runs the analysis daily at 00:30 UTC
 ```
 
 Then the web app:
@@ -75,8 +76,8 @@ the live chart never reloads.
 | SUGG | F4 | Suggestion queue (take/skip/modify) | *strategy not built* |
 | JRNL | F5 | Journal of decisions and outcomes | *journal not built* |
 | DRIFT | F6 | Backtest vs live | *backtest not built* |
-| ASTRO | F7 | Four tabs. **SKY**: current positions. **EVENTS**: past and upcoming transits. **PLAYBOOK**: per-asset patterns and every occurrence with exception context. **CHOP**: transit states vs sideways markets | sky, transits, playbook |
-| SYS | F8 | Runner heartbeat, which layers are built, feed provenance, runner log, settings | system |
+| ASTRO | F7 | Four tabs:<br>**SKY**: current positions<br>**EVENTS**: past and upcoming transits, with exact times<br>**PLAYBOOK**: the RUN ANALYSIS button, per-asset patterns (daily and hourly labels), and every occurrence with exception context and move timing. Click an occurrence for its hourly chart around the exact moment.<br>**CHOP**: transit states vs sideways markets | sky, transits, playbook, analysis runs, intraday |
+| SYS | F8 | Runner heartbeat, the run button with run history and schedule, which layers are built, feed provenance, runner log, settings | system, analysis runs |
 | HELP | F1 | Commands and keys | — |
 
 The SUGG, JRNL and DRIFT screens are fully built. They read
@@ -105,6 +106,10 @@ All shapes are in [`src/api/types.ts`](src/api/types.ts). They mirror
 | GET | `/api/playbook/{asset}` | `PlaybookView`: patterns (without occurrences) and chop states |
 | GET | `/api/playbook/{asset}/patterns/{id}` | `PatternResult`: every occurrence with its outcome and context |
 | GET | `/api/system` | `SystemStatus`: runner, components, feeds, log, config |
+| POST | `/api/analysis/runs` | Start an analysis run: `{ placebo, refresh }` → `202 AnalysisRun`, or `409` if one is already going |
+| GET | `/api/analysis/runs`, `/api/analysis/runs/current`, `/api/analysis/runs/{id}` | Run history, the active run (progress, step, log), one run |
+| GET | `/api/analysis/schedule` | `ScheduleView`: the daily time, the placebo day, the next scheduled run |
+| GET | `/api/intraday/{asset}?at&before_hours&after_hours` | `Candle[]`: hourly bars around a moment (the drill-down chart) |
 | GET | `/api/suggestions`, `/api/journal` | `[]` until those layers exist |
 | POST | `/api/suggestions/{id}/decision` | `501` until the strategy layer exists |
 | GET | `/api/drift` | `404` until the backtest layer exists |

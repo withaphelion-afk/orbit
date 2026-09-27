@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -45,12 +46,22 @@ class PlanetSeries:
     longitude: np.ndarray | None = None  # ecliptic degrees, 0-360
 
 
-def load_price_series(asset: Asset, until=None) -> PriceSeries:
-    cutoff = day64(until or today_utc())
-    candles = [c for c in load_candles(asset, TIMEFRAME) if day64(c.timestamp) < cutoff]
+def hour64(d) -> np.datetime64:
+    """A datetime as numpy hour precision (floored)."""
+    return np.datetime64(d.replace(tzinfo=None), "h")
+
+
+def load_price_series(asset: Asset, until=None, timeframe: str = TIMEFRAME) -> PriceSeries:
+    """Completed bars only: for daily, bars before today; for hourly, before the current hour."""
+    now = until or datetime.now(timezone.utc)
+    if timeframe == "1h":
+        cutoff, unit, stamp = hour64(now), "datetime64[h]", hour64
+    else:
+        cutoff, unit, stamp = day64(until or today_utc()), "datetime64[D]", day64
+    candles = [c for c in load_candles(asset, timeframe) if stamp(c.timestamp) < cutoff]
     return PriceSeries(
         asset=asset,
-        dates=np.array([day64(c.timestamp) for c in candles], dtype="datetime64[D]"),
+        dates=np.array([stamp(c.timestamp) for c in candles], dtype=unit),
         open=np.array([c.open for c in candles], dtype=float),
         high=np.array([c.high for c in candles], dtype=float),
         low=np.array([c.low for c in candles], dtype=float),

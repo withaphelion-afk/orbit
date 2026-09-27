@@ -30,6 +30,16 @@ def from_unix(seconds: float, utc_offset_seconds: int = 0) -> datetime:
     return utc_day(local)
 
 
+def from_unix_exact(seconds: float) -> datetime:
+    """A unix timestamp as an exact UTC datetime (for intraday bars)."""
+    return datetime.fromtimestamp(seconds, tz=timezone.utc)
+
+
+def bar_time(seconds: float, timeframe: str, utc_offset_seconds: int = 0) -> datetime:
+    """A bar's timestamp: its calendar day for daily bars, the exact hour otherwise."""
+    return from_unix(seconds, utc_offset_seconds) if timeframe == "1d" else from_unix_exact(seconds)
+
+
 def today_utc() -> datetime:
     return utc_day(datetime.now(timezone.utc))
 

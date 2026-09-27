@@ -10,21 +10,22 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from orbit.core.types import Asset, Candle
-from orbit.data.dates import from_unix
+from orbit.data.dates import bar_time
 from orbit.data.http import get_json
 
 BASE_URL = "https://www.bitstamp.net/api/v2/ohlc/{pair}/"
 PAGE_LIMIT = 1000
-DAY_SECONDS = 86_400
+STEP_SECONDS = {"1d": 86_400, "1h": 3_600}
 
 
-def fetch_history(asset: Asset, pair: str, start: datetime, end: datetime | None = None) -> list[Candle]:
-    """Daily candles for `pair` (e.g. "btcusd") from `start` up to `end` (default: now)."""
+def fetch_history(asset: Asset, pair: str, start: datetime, end: datetime | None = None, timeframe: str = "1d") -> list[Candle]:
+    """Candles for `pair` (e.g. "btcusd") from `start` up to `end` (default: now); daily or hourly."""
+    step = STEP_SECONDS[timeframe]
     end_ts = int((end or datetime.now(timezone.utc)).timestamp())
     cursor = int(start.timestamp())
     candles: list[Candle] = []
     while cursor < end_ts:
-        payload = get_json(BASE_URL.format(pair=pair), {"step": DAY_SECONDS, "limit": PAGE_LIMIT, "start": cursor})
+        payload = get_json(BASE_URL.format(pair=pair), {"step": step, "limit": PAGE_LIMIT, "start": cursor})
         rows = payload["data"]["ohlc"]
         if not rows:
             break
@@ -35,7 +36,7 @@ def fetch_history(asset: Asset, pair: str, start: datetime, end: datetime | None
             candles.append(
                 Candle(
                     asset=asset,
-                    timestamp=from_unix(ts),
+                    timestamp=bar_time(ts, timeframe),
                     open=float(row["open"]),
                     high=float(row["high"]),
                     low=float(row["low"]),
@@ -47,5 +48,5 @@ def fetch_history(asset: Asset, pair: str, start: datetime, end: datetime | None
         last = int(rows[-1]["timestamp"])
         if len(rows) < PAGE_LIMIT or last >= end_ts:
             break
-        cursor = last + DAY_SECONDS
+        cursor = last + step
     return candles

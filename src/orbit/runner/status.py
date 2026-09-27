@@ -60,3 +60,16 @@ def mark_cycle_end(ok: bool, error: str | None = None) -> None:
         }
     )
     _write(status)
+
+
+def mark_next_analysis(at: datetime) -> None:
+    status = read_status() or {}
+    if status.get("next_analysis_at") != at.isoformat():
+        status["next_analysis_at"] = at.isoformat()
+        _write(status)
+
+
+def mark_analysis(run_id: str, next_at: datetime) -> None:
+    status = read_status() or {}
+    status.update({"last_scheduled_run_id": run_id, "last_scheduled_run_at": _now(), "next_analysis_at": next_at.isoformat()})
+    _write(status)

@@ -185,6 +185,9 @@ class TransitEvent(BaseModel):
     to_state: str
     backward: bool = False
     reentry: bool = False
+    # The moment itself, to the second (analysis/exact_times.py). None when not
+    # computed, or for a station whose speed change couldn't be bracketed.
+    exact_time: datetime | None = None
 
 
 class Outcome(str, Enum):
@@ -202,10 +205,9 @@ class ConfidenceLabel(str, Enum):
     STRONG = "strong"  # survives FDR at the strict threshold, with a real sample and effect
 
 
-class PatternHorizonStat(BaseModel):
+class HorizonStatBase(BaseModel):
     """How one pattern's occurrences behaved over one forward horizon."""
 
-    horizon_days: int
     n: int
     big_up_rate: float
     big_down_rate: float
@@ -228,6 +230,18 @@ class PatternHorizonStat(BaseModel):
     p_uniform_best: float | None = None
 
 
+class PatternHorizonStat(HorizonStatBase):
+    """A daily-bar horizon, counted from the day of the transit."""
+
+    horizon_days: int
+
+
+class TimingHorizonStat(HorizonStatBase):
+    """An hourly-bar horizon, counted from the transit's exact moment."""
+
+    horizon_hours: int
+
+
 class PatternOccurrence(BaseModel):
     """One historical occurrence of a pattern, with what followed and its context."""
 
@@ -241,6 +255,11 @@ class PatternOccurrence(BaseModel):
     volatility_percentile: float | None = None  # 20d realised vol vs the asset's own history, 0-1
     concurrent_events: list[str] = []  # other transits inside the same forward window
     conflicting_events: list[str] = []  # concurrent transits whose own dominant outcome is the opposite
+    # Hourly drill-down around the exact moment (None where no hourly bars exist).
+    hours_to_move: float | None = None  # hours until price had moved one daily ATR in the move's direction
+    hours_to_peak: float | None = None  # hours until the largest move in that direction within the window
+    peak_return: float | None = None  # return at that peak, from the exact moment
+    pre_move_return: float | None = None  # return over the 72 hours before the exact moment
 
 
 class PatternResult(BaseModel):
@@ -261,6 +280,14 @@ class PatternResult(BaseModel):
     score: int  # 0-100 blend of sample size, effect size and corrected significance
     summary: str
     occurrences: list[PatternOccurrence] = []
+    # The same question at hourly resolution, from the exact moment (own FDR family).
+    timing: list[TimingHorizonStat] = []
+    timing_headline_hours: int | None = None
+    timing_dominant: Outcome | None = None
+    timing_label: ConfidenceLabel = ConfidenceLabel.INSUFFICIENT_DATA
+    timing_score: int = 0
+    timing_summary: str = ""
+    median_hours_to_move: float | None = None
 
 
 class SidewaysStateResult(BaseModel):
@@ -285,6 +312,8 @@ class AssetPlaybook(BaseModel):
     history_start: datetime
     history_end: datetime
     bars: int
+    hourly_start: datetime | None = None
+    hourly_bars: int = 0
     patterns: list[PatternResult]
     sideways: list[SidewaysStateResult]
 

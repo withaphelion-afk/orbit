@@ -4,6 +4,7 @@
  * elsewhere.
  */
 import type {
+  AnalysisRun,
   Asset,
   Candle,
   DecisionRequest,
@@ -14,6 +15,7 @@ import type {
   PlaybookView,
   Quote,
   RegimeReading,
+  ScheduleView,
   Signal,
   SkyPosition,
   SuggestionView,
@@ -75,6 +77,19 @@ export function createApi(base = '', fetcher: typeof fetch = (...a) => fetch(...
     journal: () => get<JournalRow[]>('/api/journal'),
     drift: () => get<DriftReport>('/api/drift'),
     system: () => get<SystemStatus>('/api/system'),
+    runs: () => get<AnalysisRun[]>('/api/analysis/runs'),
+    currentRun: () => get<AnalysisRun | null>('/api/analysis/runs/current'),
+    schedule: () => get<ScheduleView>('/api/analysis/schedule'),
+    intraday: (a: Asset, at: string, beforeHours: number, afterHours: number) =>
+      get<Candle[]>(`/api/intraday/${a}?at=${enc(at)}&before_hours=${beforeHours}&after_hours=${afterHours}`),
+    async startRun(opts: { placebo: boolean; refresh: boolean }): Promise<AnalysisRun> {
+      const res = await fetcher(`${base}/api/analysis/runs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      return parse<AnalysisRun>(res, 'POST run')
+    },
     async decide(id: string, req: DecisionRequest): Promise<JournalRow> {
       const res = await fetcher(`${base}/api/suggestions/${enc(id)}/decision`, {
         method: 'POST',

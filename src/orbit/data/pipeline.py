@@ -10,23 +10,24 @@ from orbit.config.settings import EPHEMERIS_YEARS_AHEAD, EPHEMERIS_YEARS_OF_HIST
 from orbit.core.types import Asset, Planet
 from orbit.data import ephemeris
 from orbit.data.dates import today_utc
-from orbit.data.history import update_history
+from orbit.data.history import TIMEFRAMES, update_history
 from orbit.data.storage import save_ephemeris_snapshots
 
 ALL_ASSETS = [Asset.BTC, Asset.ETH, Asset.SOL, Asset.SILVER]
 
 
 def fetch_all_prices() -> dict[str, dict | None]:
-    """Bring every asset's stored history up to date.
+    """Bring every asset's stored daily and hourly history up to date.
 
-    The first run builds full stitched histories (a few hundred requests);
-    later runs only fetch the last few days. Returns each asset's stitch
-    report when a full build happened, else None.
+    The first run builds full stitched histories (a few hundred requests per
+    timeframe); later runs only fetch the last few days. Returns each
+    asset/timeframe's stitch report when a full build happened, else None.
     """
     reports = {}
     for asset in ALL_ASSETS:
-        _, report = update_history(asset)
-        reports[asset.value] = report
+        for timeframe in TIMEFRAMES:
+            _, report = update_history(asset, timeframe)
+            reports[f"{asset.value} {timeframe}"] = report
     return reports
 
 

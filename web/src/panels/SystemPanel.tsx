@@ -1,6 +1,7 @@
-import { useSystem } from '../api/hooks'
+import { useRuns, useSystem } from '../api/hooks'
 import type { Components } from '../api/types'
 import { Pill, QueryState } from '../components/bits'
+import { RunControl } from '../components/RunControl'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
 import { useNow } from '../hooks/useLiveFeed'
@@ -78,6 +79,11 @@ export function SystemPanel({ hidden }: { hidden: boolean }) {
             </dl>
           </section>
           <section className="wide">
+            <span className="lbl">Analysis runs · button here, on ASTRO → PLAYBOOK, or the runner's daily schedule</span>
+            <RunControl />
+            <RunHistory />
+          </section>
+          <section className="wide">
             <span className="lbl">Price feeds · live stream {connected ? 'connected' : 'disconnected'}</span>
             <div className="tbl-wrap">
               <table className="tbl">
@@ -144,5 +150,47 @@ export function SystemPanel({ hidden }: { hidden: boolean }) {
         </div>
       )}
     </Panel>
+  )
+}
+
+function RunHistory() {
+  const { data } = useRuns()
+  if (!data?.length) return null
+  return (
+    <div className="tbl-wrap">
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th className="l">Started (UTC)</th>
+            <th className="l">Trigger</th>
+            <th className="l">Status</th>
+            <th>Took</th>
+            <th>Tests</th>
+            <th className="l">Placebo</th>
+            <th>Changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.slice(0, 10).map((r) => {
+            const took = r.finished_at && r.started_at ? Math.round((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000) : null
+            return (
+              <tr key={r.id} title={r.error ?? r.step}>
+                <td className="l">
+                  {day(r.created_at)} {hhmm(r.created_at)}
+                </td>
+                <td className="l">{r.trigger}</td>
+                <td className={`l ${r.status === 'succeeded' ? 'up' : r.status === 'failed' ? 'down' : 'hi'}`}>{r.status}</td>
+                <td>{took === null ? '—' : took < 90 ? `${took}s` : `${Math.round(took / 60)} min`}</td>
+                <td>{r.summary.total_tests ? num(r.summary.total_tests, 0) : '—'}</td>
+                <td className="l">
+                  {r.summary.placebo ? `${r.summary.placebo.runs_with_any_discovery}/${r.summary.placebo.placebo_runs} false` : r.include_placebo ? '…' : '—'}
+                </td>
+                <td>{r.status === 'succeeded' ? r.changes.length : '—'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

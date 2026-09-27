@@ -80,3 +80,32 @@ def test_playbook_404_before_first_build(client, monkeypatch):
     monkeypatch.setattr(store, "playbook", lambda asset: None)
     assert client.get("/api/playbook").status_code == 404
     assert client.get("/api/playbook/BTC").status_code == 404
+
+
+def test_run_button_starts_one_run_and_refuses_a_second(client, monkeypatch):
+    from orbit.analysis import jobs
+
+    started = []
+
+    def fake_start(trigger, include_placebo=False, refresh_data=True):
+        if started:
+            raise jobs.AlreadyRunning(started[0])
+        run = jobs.AnalysisRun(id="r1", trigger=trigger, include_placebo=include_placebo, refresh_data=refresh_data,
+                               status="queued", created_at=datetime.now(timezone.utc))
+        started.append(run)
+        return run
+
+    monkeypatch.setattr(app_module.jobs, "start", fake_start)
+    first = client.post("/api/analysis/runs", json={"placebo": True, "refresh": False})
+    assert first.status_code == 202
+    assert first.json()["trigger"] == "manual" and first.json()["include_placebo"] is True
+    second = client.post("/api/analysis/runs", json={})
+    assert second.status_code == 409 and "already" in second.json()["detail"]
+
+
+def test_intraday_window(client, monkeypatch):
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    bars = [Candle(asset=Asset.BTC, timestamp=base + timedelta(hours=h), open=1, high=1, low=1, close=1, volume=1, source="t") for h in range(48)]
+    monkeypatch.setattr(store, "candles", lambda asset, timeframe="1d": bars if timeframe == "1h" else [])
+    r = client.get("/api/intraday/BTC", params={"at": "2026-01-02T00:30:00Z", "before_hours": 2, "after_hours": 3})
+    assert [c["timestamp"][11:13] for c in r.json()] == ["23", "00", "01", "02", "03"]

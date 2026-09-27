@@ -4,7 +4,7 @@ import type { SkyPosition } from '../api/types'
 import { Empty, Pill, QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
-import { day, daysFrom, pct, pval, transitLabel } from '../lib/format'
+import { day, daysFrom, hhmm, pct, pval, transitLabel } from '../lib/format'
 import { useTerminal } from '../state/store'
 import { ConfLabel, OutcomeTag } from './astro/labels'
 import { PlaybookTab } from './astro/PlaybookTab'
@@ -67,7 +67,9 @@ function SkyTab() {
               <td>{deg(p.degree)}</td>
               <td className="l">{p.retrograde ? <span className="warn">RETROGRADE</span> : <span className="dim">direct</span>}</td>
               <td className="l">{p.next_event ? transitLabel(p.next_event) : '—'}</td>
-              <td className="l">{p.next_event ? `${day(p.next_event.date)} · ${daysFrom(p.next_event.date)}` : '—'}</td>
+              <td className="l">
+                {p.next_event ? `${day(p.next_event.exact_time ?? p.next_event.date)} ${p.next_event.exact_time ? hhmm(p.next_event.exact_time) : ''} · ${daysFrom(p.next_event.date)}` : '—'}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -88,6 +90,7 @@ function EventsTab() {
           <tr>
             <th className="l">Date</th>
             <th className="l">When</th>
+            <th className="l">Exact (UTC)</th>
             <th className="l">Transit</th>
             <th className="l">Type</th>
             <th className="l" title="Assets whose playbook rates this pattern weak or better">Notable for</th>
@@ -100,6 +103,7 @@ function EventsTab() {
                 {day(v.event.date)} {new Date(v.event.date).getUTCFullYear()}
               </td>
               <td className="l">{daysFrom(v.event.date)}</td>
+              <td className="l mid">{v.event.exact_time ? `${day(v.event.exact_time)} ${hhmm(v.event.exact_time)}` : '—'}</td>
               <td className="l body">{transitLabel(v.event)}</td>
               <td className="l dim">{v.event.event_type === 'INGRESS' ? 'ingress' : 'station'}</td>
               <td className="l">

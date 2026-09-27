@@ -20,6 +20,7 @@ from orbit.core.types import (
     Planet,
     SidewaysStateResult,
     SpeedClass,
+    TimingHorizonStat,
     TransitEvent,
     TransitEventType,
 )
@@ -89,6 +90,13 @@ class PatternSummary(BaseModel):
     score: int
     summary: str
     exceptions: int
+    timing: list[TimingHorizonStat] = []
+    timing_headline_hours: int | None = None
+    timing_dominant: Outcome | None = None
+    timing_label: ConfidenceLabel = ConfidenceLabel.INSUFFICIENT_DATA
+    timing_score: int = 0
+    timing_summary: str = ""
+    median_hours_to_move: float | None = None
 
 
 class PlaybookView(BaseModel):
@@ -97,6 +105,8 @@ class PlaybookView(BaseModel):
     history_start: datetime
     history_end: datetime
     bars: int
+    hourly_start: datetime | None = None
+    hourly_bars: int = 0
     patterns: list[PatternSummary]
     sideways: list[SidewaysStateResult]
 
@@ -160,3 +170,18 @@ class SystemStatus(BaseModel):
     log: list[LogLine]  # newest first
     config: dict[str, str]
     playbook_generated_at: datetime | None
+
+
+class RunRequest(BaseModel):
+    placebo: bool = False  # also run the placebo check (about 10x longer)
+    refresh: bool = True  # fetch the latest prices and ephemeris first
+
+
+class ScheduleView(BaseModel):
+    enabled: bool
+    daily_at_utc: str
+    placebo_weekday: int  # 0 = Monday
+    next_at: datetime | None  # as last reported by the runner
+    runner_running: bool
+    last_success_at: datetime | None
+    last_success_trigger: str | None

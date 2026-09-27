@@ -69,10 +69,10 @@ export interface TransitEvent {
   to_state: string
   backward: boolean // ingress made while retrograde, back into the previous sign
   reentry: boolean // the forward ingress that follows a backward one
+  exact_time: ISODateTime | null // the moment itself, to the second
 }
 
-export interface PatternHorizonStat {
-  horizon_days: number
+export interface HorizonStatBase {
   n: number
   big_up_rate: number
   big_down_rate: number
@@ -92,6 +92,16 @@ export interface PatternHorizonStat {
   p_uniform_best: number | null
 }
 
+/** Counted in daily bars from the day of the transit. */
+export interface PatternHorizonStat extends HorizonStatBase {
+  horizon_days: number
+}
+
+/** Counted in hourly bars from the transit's exact moment. */
+export interface TimingHorizonStat extends HorizonStatBase {
+  horizon_hours: number
+}
+
 export interface PatternOccurrence {
   date: ISODateTime
   event: TransitEvent
@@ -103,6 +113,10 @@ export interface PatternOccurrence {
   volatility_percentile: number | null
   concurrent_events: string[]
   conflicting_events: string[]
+  hours_to_move: number | null // hours until price moved one daily ATR in the move's direction
+  hours_to_peak: number | null
+  peak_return: number | null
+  pre_move_return: number | null // the 72 hours before the exact moment
 }
 
 interface PatternCore {
@@ -119,6 +133,13 @@ interface PatternCore {
   label: ConfidenceLabel
   score: number
   summary: string
+  timing: TimingHorizonStat[]
+  timing_headline_hours: number | null
+  timing_dominant: Outcome | null
+  timing_label: ConfidenceLabel
+  timing_score: number
+  timing_summary: string
+  median_hours_to_move: number | null
 }
 
 export interface PatternResult extends PatternCore {
@@ -199,6 +220,8 @@ export interface PlaybookView {
   history_start: ISODateTime
   history_end: ISODateTime
   bars: number
+  hourly_start: ISODateTime | null
+  hourly_bars: number
   patterns: PatternSummary[]
   sideways: SidewaysStateResult[]
 }
@@ -314,4 +337,49 @@ export interface DriftReport {
   backtest_trades: number
   live_trades: number
   curve: EquityPoint[]
+}
+
+// ---------- analysis runs (analysis/jobs.py) ----------
+
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed'
+
+export interface LabelChange {
+  asset: Asset
+  pattern_id: string
+  description: string
+  kind: 'daily' | 'timing'
+  before: ConfidenceLabel | null
+  after: ConfidenceLabel
+}
+
+export interface AnalysisRun {
+  id: string
+  trigger: 'manual' | 'schedule'
+  include_placebo: boolean
+  refresh_data: boolean
+  status: RunStatus
+  created_at: ISODateTime
+  started_at: ISODateTime | null
+  finished_at: ISODateTime | null
+  heartbeat_at: ISODateTime | null
+  step: string
+  progress: number
+  log: string[]
+  summary: {
+    total_tests?: number
+    tests_by_family?: Record<string, number>
+    placebo?: { placebo_runs: number; runs_with_any_discovery: number; runs_with_any_timing_discovery: number }
+  }
+  changes: LabelChange[]
+  error: string | null
+}
+
+export interface ScheduleView {
+  enabled: boolean
+  daily_at_utc: string
+  placebo_weekday: number // 0 = Monday
+  next_at: ISODateTime | null
+  runner_running: boolean
+  last_success_at: ISODateTime | null
+  last_success_trigger: string | null
 }
