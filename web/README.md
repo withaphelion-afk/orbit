@@ -8,9 +8,6 @@ Built with Vite, React 19 and TypeScript. It uses TradingView's embedded
 widget and `lightweight-charts` for charts, TanStack Query for server state,
 zustand for terminal state and `cmdk` for the command palette.
 
-The look and interaction model were agreed in the single-file mockup at
-[`mockup/index.html`](mockup/index.html).
-
 ## Run it
 
 ```bash
@@ -89,7 +86,8 @@ All shapes are defined in [`src/api/types.ts`](src/api/types.ts).
   mirror `src/orbit/core/types.py` field for field, so pydantic's
   `model_dump(mode="json")` output fits directly.
 - Timestamps are ISO-8601 UTC strings.
-- `Asset` is `BTC | ETH | SOL | SILVER`.
+- `Asset` is `BTC | ETH | SOL | SILVER`. `Regime` (`BULL | BEAR | CHOPPY`) and
+  `Planet` use the same enum values as `core/types.py`.
 
 | Method | Path | Returns | Notes |
 |---|---|---|---|

@@ -6,7 +6,7 @@ import { ASSET_META } from '../config'
 import { price, signed, tone } from '../lib/format'
 import { useTerminal } from '../state/store'
 
-const REGIME_TONE = { 'TREND UP': 'up', 'TREND DN': 'down', RANGE: 'mid' } as const
+const REGIME_TONE = { BULL: 'up', BEAR: 'down', CHOPPY: 'mid' } as const
 
 function Row({ q, pending }: { q: Quote; pending?: SuggestionView }) {
   const active = useTerminal((s) => s.asset === q.asset)

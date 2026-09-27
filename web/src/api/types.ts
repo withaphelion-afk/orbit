@@ -12,6 +12,9 @@
 
 export type Asset = 'BTC' | 'ETH' | 'SOL' | 'SILVER'
 export type Direction = 'LONG' | 'SHORT'
+/** Market environment from BTC/ETH trend + volatility. CHOPPY blocks new entries. */
+export type Regime = 'BULL' | 'BEAR' | 'CHOPPY'
+export type Planet = 'SUN' | 'MOON' | 'MERCURY' | 'VENUS' | 'MARS' | 'JUPITER' | 'SATURN' | 'URANUS' | 'NEPTUNE' | 'PLUTO'
 export type Decision = 'TAKEN' | 'SKIPPED' | 'MODIFIED'
 export type ISODateTime = string
 
@@ -55,7 +58,6 @@ export interface JournalEntry {
 // ---------- UI views (API contract) ----------
 
 export type Source = 'LIVE' | 'MOCK'
-export type Regime = 'TREND UP' | 'TREND DN' | 'RANGE'
 
 export interface Quote {
   asset: Asset
@@ -64,7 +66,7 @@ export interface Quote {
   day_high: number
   day_low: number
   sparkline: number[] // recent daily closes, oldest first
-  regime: Regime
+  regime: Regime // this asset's own regime, same scale as the BTC/ETH regime gate
   source: Source
 }
 
@@ -117,7 +119,7 @@ export interface DriftReport {
 export interface AstroEvent {
   id: string
   timestamp: ISODateTime
-  body: string
+  body: Planet
   event: string
   prior_occurrences: number
   btc_5d_mean_after: number | null // percent, null when not yet measured

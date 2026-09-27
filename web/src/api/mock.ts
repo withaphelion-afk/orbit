@@ -20,6 +20,7 @@ import type {
   JournalRow,
   OrbitSource,
   Quote,
+  Planet,
   Regime,
   Signal,
   SuggestionView,
@@ -48,7 +49,7 @@ const SPEC: Record<Asset, { base: number; vol: number; vb: number; trend: number
 }
 
 // [days from today, body, event, prior occurrences, BTC 5-day mean after (%)]
-const ASTRO_SEED: [number, string, string, number, number | null][] = [
+const ASTRO_SEED: [number, Planet, string, number, number | null][] = [
   [-58, 'MARS', 'Ingress Leo', 7, 0.4],
   [-34, 'MERCURY', 'Stations retrograde', 12, -1.1],
   [-19, 'SUN', 'Conjunct Mercury', 9, 0.2],
@@ -149,7 +150,7 @@ export function createMockSource(opts: MockOptions = {}): OrbitSource {
     const s50 = ind[a].s50
     const dist = (bars[a][i].close / s50[i] - 1) * 100
     const slope = (s50[i] / s50[i - 10] - 1) * 100
-    const tag: Regime = dist > 1.5 && slope > 0.3 ? 'TREND UP' : dist < -1.5 && slope < -0.3 ? 'TREND DN' : 'RANGE'
+    const tag: Regime = dist > 1.5 && slope > 0.3 ? 'BULL' : dist < -1.5 && slope < -0.3 ? 'BEAR' : 'CHOPPY'
     return { tag, dist, slope }
   }
 
