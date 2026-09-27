@@ -12,7 +12,7 @@ every load. Nothing talks to the backend yet.
 | Code  | Key | Screen |
 |-------|-----|--------|
 | HELP  | F1  | Commands and keyboard reference |
-| MON   | F2  | Four-panel workspace: chart, suggestions, drift, journal |
+| MON   | F2  | Chart with the watchlist on the right (queue and drift status at its foot) |
 | GP    | F3  | Candlestick chart with signal markers, astro transits, pending entry/stop/target |
 | SUGG  | F4  | Suggestion queue: confidence, reward:risk, signal breakdown, Take / Skip / Modify |
 | JRNL  | F5  | Journal with filters, sorting, and "would-be" P&L on skipped trades |

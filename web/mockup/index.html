@@ -12,18 +12,18 @@
   color-scheme: dark;
   --ground: #000000;
   --bezel: #050505;
-  --panel: #0b0b0c;
-  --panel-2: #111113;
-  --panel-3: #18181b;
-  --line: #1e1f22;
-  --line-2: #2a2b2f;
-  --amber: #ffa028;
-  --amber-hi: #ffc46b;
-  --amber-lo: #8a5a1c;
-  --amber-wash: rgba(255, 160, 40, 0.08);
-  --text: #e6e2da;
-  --text-2: #9b968c;
-  --text-3: #5e5a53;
+  --panel: #0a0a0a;
+  --panel-2: #111111;
+  --panel-3: #181818;
+  --line: #1d1d1d;
+  --line-2: #2b2b2b;
+  --amber: #ffffff;
+  --amber-hi: #ffffff;
+  --amber-lo: #6e6e6e;
+  --amber-wash: rgba(255, 255, 255, 0.06);
+  --text: #d6d6d6;
+  --text-2: #8e8e8e;
+  --text-3: #575757;
   --up: #2bd67b;
   --up-wash: rgba(43, 214, 123, 0.14);
   --down: #ff5a4e;
@@ -60,7 +60,7 @@ button { cursor: pointer; }
 #term {
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   border: 1px solid var(--line-2);
   background: var(--bezel);
 }
@@ -86,7 +86,7 @@ button { cursor: pointer; }
   border-right: 1px solid var(--line);
   min-width: 0;
 }
-.cmd .prompt { color: var(--amber); font-weight: 600; }
+.cmd .prompt { color: var(--text-2); font-weight: 600; }
 .cmd-field { position: relative; flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; }
 #cmd, #ghost {
   position: absolute; inset: 0;
@@ -117,28 +117,36 @@ button { cursor: pointer; }
 .pill.watch { color: var(--warn); }
 .pill.drift { color: var(--down); }
 
-/* ---------- tape ---------- */
-.tape {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-bottom: 1px solid var(--line-2);
-}
+/* ---------- watchlist ---------- */
+.watch { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; }
+.wl { overflow: auto; }
+.wl-head { display: grid; grid-template-columns: 1fr auto; padding: 6px 12px; border-bottom: 1px solid var(--line); }
 .tk {
-  display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto;
-  column-gap: 12px; align-items: center;
-  padding: 7px 12px; background: transparent; border: 0; text-align: left;
-  border-right: 1px solid var(--line);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px;
+  width: 100%; padding: 11px 12px 12px; background: transparent; border: 0; border-bottom: 1px solid var(--line); text-align: left;
   position: relative;
 }
-.tk:last-child { border-right: 0; }
 .tk:hover { background: var(--panel-2); }
 .tk.on { background: var(--amber-wash); }
-.tk.on::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--amber); }
-.tk .sym { font: 700 13px/1 var(--ui); letter-spacing: 0.1em; color: var(--amber); }
-.tk .nm { font: 400 10px/1 var(--ui); color: var(--text-3); letter-spacing: 0.08em; text-transform: uppercase; grid-column: 1; }
-.tk .px { font: 500 15px/1 var(--mono); justify-self: end; grid-column: 2; grid-row: 1; padding: 1px 3px; }
-.tk .ch { font: 400 11px/1 var(--mono); justify-self: end; grid-column: 2; grid-row: 2; margin-top: 3px; }
-.tk svg { grid-column: 3; grid-row: 1 / span 2; }
-.tk .rg { position: absolute; right: 12px; top: 5px; display: none; }
+.tk.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--amber); }
+.tk .id { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tk .sym { font: 700 14px/1 var(--ui); letter-spacing: 0.1em; color: var(--text); }
+.tk.on .sym { color: #fff; }
+.tk .nm { font: 400 11px/1 var(--ui); color: var(--text-3); letter-spacing: 0.06em; text-transform: uppercase; }
+.tk .px { font: 500 16px/1 var(--mono); justify-self: end; padding: 1px 3px; color: #fff; }
+.tk .rgl { font: 600 10px/1 var(--ui); letter-spacing: 0.12em; align-self: center; }
+.tk .ch { font: 400 11px/1 var(--mono); justify-self: end; }
+.tk svg { grid-column: 1 / -1; width: 100%; height: 34px; display: block; }
+.range { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 10px; color: var(--text-3); }
+.range .rail { position: relative; height: 2px; background: var(--line-2); }
+.range .rail i { position: absolute; top: -3px; width: 2px; height: 8px; background: var(--text); }
+.tk .pend { grid-column: 1 / -1; font: 600 10px/1 var(--ui); letter-spacing: 0.1em; color: var(--text-2); display: flex; gap: 6px; align-items: center; }
+.tk .pend b { font-weight: 700; }
+.glance { border-top: 1px solid var(--line-2); display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+.glance button { background: var(--panel); border: 0; padding: 9px 12px; text-align: left; display: grid; gap: 5px; }
+.glance button:hover { background: var(--panel-2); }
+.glance .v { font: 500 14px/1 var(--mono); color: #fff; display: flex; gap: 6px; align-items: center; }
+.glance kbd { font: 600 10px/1 var(--mono); color: var(--text-3); }
 .up { color: var(--up); } .down { color: var(--down); } .dim { color: var(--text-3); } .mid { color: var(--text-2); } .amb { color: var(--amber); }
 .flash-up { animation: fu .7s ease-out; } .flash-down { animation: fd .7s ease-out; }
 @keyframes fu { from { background: var(--up); color: #000; } to { background: transparent; } }
@@ -150,14 +158,13 @@ button { cursor: pointer; }
   min-height: 0;
 }
 #main.mon {
-  grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1.28fr) minmax(0, 1fr);
-  grid-template-areas: "gp sugg" "drift jrnl";
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "gp watch";
 }
 #main.max { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "one"; }
 .panel { display: flex; flex-direction: column; background: var(--panel); min-height: 0; min-width: 0; }
-#main.mon #p-GP { grid-area: gp; } #main.mon #p-SUGG { grid-area: sugg; }
-#main.mon #p-DRIFT { grid-area: drift; } #main.mon #p-JRNL { grid-area: jrnl; }
+#main.mon #p-GP { grid-area: gp; } #main.mon #p-WATCH { grid-area: watch; }
 #main.max .panel { grid-area: one; }
 .ph {
   display: flex; align-items: center; gap: 10px;
@@ -277,7 +284,6 @@ button { cursor: pointer; }
 .dec { font: 700 10px/1 var(--ui); letter-spacing: 0.1em; }
 .dec.TAKEN { color: var(--up); } .dec.SKIPPED { color: var(--text-3); } .dec.MODIFIED { color: var(--amber); }
 .shadow { color: var(--text-3); font-style: italic; }
-#main.mon .tbl .wide { display: none; }
 .jbar { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
 .jbar > div { background: var(--panel); padding: 6px 10px; display: grid; gap: 3px; flex: 1 1 90px; }
 .jbar .v { font-size: 13px; font-weight: 500; }
@@ -355,10 +361,7 @@ kbd.k { font: 600 11px/1 var(--mono); color: var(--amber-hi); }
   body { overflow: auto; height: auto; }
   html { height: auto; }
   #term { height: auto; }
-  .tape { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .tk:nth-child(2) { border-right: 0; }
-  .tk:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-  #main.mon { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "gp" "sugg" "drift" "jrnl"; }
+  #main.mon { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "gp" "watch"; }
   #main .panel { min-height: 380px; }
   #main.mon #p-GP { min-height: 340px; }
   #main.max #p-SUGG .sugg { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
@@ -401,8 +404,6 @@ kbd.k { font: 600 11px/1 var(--mono); color: var(--amber-hi); }
     </div>
   </header>
 
-  <nav class="tape" id="tape" aria-label="Watchlist"></nav>
-
   <main id="main" class="mon">
     <section class="panel" id="p-GP">
       <div class="ph">
@@ -427,7 +428,20 @@ kbd.k { font: 600 11px/1 var(--mono); color: var(--amber-hi); }
       </div>
     </section>
 
-    <section class="panel" id="p-SUGG">
+    <section class="panel" id="p-WATCH">
+      <div class="ph">
+        <span class="code" style="cursor:default">WL</span>
+        <span class="ptitle">Watchlist</span>
+        <div class="pmeta"><span class="dim">1–4 SELECT</span></div>
+      </div>
+      <div class="pb"><div class="watch">
+        <div class="wl-head"><span class="lbl">Asset · regime</span><span class="lbl">Last · day</span></div>
+        <nav class="wl" id="tape" aria-label="Watchlist"></nav>
+        <div class="glance" id="glance"></div>
+      </div></div>
+    </section>
+
+    <section class="panel" id="p-SUGG" hidden>
       <div class="ph">
         <button class="code" data-max="SUGG">SUGG</button>
         <span class="ptitle">Suggestions awaiting decision</span>
@@ -436,7 +450,7 @@ kbd.k { font: 600 11px/1 var(--mono); color: var(--amber-hi); }
       <div class="pb"><div class="sugg"><div class="slist" id="slist"></div><div class="sdetail" id="sdetail"></div></div></div>
     </section>
 
-    <section class="panel" id="p-DRIFT">
+    <section class="panel" id="p-DRIFT" hidden>
       <div class="ph">
         <button class="code" data-max="DRIFT">DRIFT</button>
         <span class="ptitle">Backtest vs live</span>
@@ -445,7 +459,7 @@ kbd.k { font: 600 11px/1 var(--mono); color: var(--amber-hi); }
       <div class="pb"><div class="drift"><div class="dstats" id="dstats"></div><div class="dchart"><div class="chart-wrap"><canvas id="drift-canvas" aria-label="Expected versus live equity"></canvas></div></div></div></div>
     </section>
 
-    <section class="panel" id="p-JRNL">
+    <section class="panel" id="p-JRNL" hidden>
       <div class="ph">
         <button class="code" data-max="JRNL">JRNL</button>
         <span class="ptitle">Trade journal</span>
@@ -685,19 +699,25 @@ function toast(msg, err) { const t = $("#toast"); t.textContent = msg; t.classNa
 
 /* ---------------- tape ---------------- */
 function spark(code) {
-  const cl = CANDLES[code].slice(-30).map(b => b.c), lo = Math.min(...cl), hi = Math.max(...cl), W = 64, H = 24;
+  const cl = CANDLES[code].slice(-30).map(b => b.c), lo = Math.min(...cl), hi = Math.max(...cl), W = 300, H = 34;
   const pts = cl.map((c, i) => [i / (cl.length - 1) * W, H - 2 - (c - lo) / (hi - lo || 1) * (H - 4)]);
   const col = cl.at(-1) >= cl[0] ? C.up : C.down, d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
   const e = pts.at(-1);
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d} L${W} ${H} L0 ${H}Z" fill="${col}" opacity=".12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.2"/><circle cx="${e[0]}" cy="${e[1]}" r="2" fill="${col}"/></svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d} L${W} ${H} L0 ${H}Z" fill="${col}" opacity=".1"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.3" vector-effect="non-scaling-stroke"/></svg>`;
 }
 function renderTape() {
   $("#tape").innerHTML = ASSETS.map(a => {
     const rg = regime(a.code);
-    return `<button class="tk" data-asset="${a.code}" title="${a.pair} · ${rg.tag}">
-      <span class="sym">${a.code}</span><span class="px" id="px-${a.code}"></span>${spark(a.code)}
-      <span class="nm">${a.name} · <span class="${rg.cls}">${rg.tag}</span></span><span class="ch" id="ch-${a.code}"></span></button>`;
+    const s = SUGG.find(x => x.asset === a.code);
+    return `<button class="tk" data-asset="${a.code}" title="${a.pair}">
+      <span class="id"><span class="sym">${a.code}</span><span class="nm">${a.name}</span></span><span class="px" id="px-${a.code}"></span>
+      <span class="rgl ${rg.cls}">${rg.tag}</span><span class="ch" id="ch-${a.code}"></span>
+      ${spark(a.code)}
+      <span class="range"><span id="lo-${a.code}"></span><span class="rail"><i id="rp-${a.code}"></i></span><span id="hi-${a.code}"></span></span>
+      ${s ? `<span class="pend">PENDING <b class="${s.dir === "LONG" ? "up" : "down"}">${s.dir}</b> · CONF ${s.conf.toFixed(2)} · R:R ${s.rr.toFixed(1)}</span>` : ""}</button>`;
   }).join("");
+  $("#glance").innerHTML = `<button data-view="SUGG"><span class="lbl">Queue <kbd>F4</kbd></span><span class="v">${SUGG.length} pending</span></button>
+    <button data-view="DRIFT"><span class="lbl">Drift <kbd>F6</kbd></span><span class="v"><em class="pill ${DRIFT.status.toLowerCase()}">${DRIFT.status}</em>${sgn(DRIFT.z, 1)}σ</span></button>`;
   updateTape();
 }
 function updateTape(flash) {
@@ -706,6 +726,9 @@ function updateTape(flash) {
     const el = $("#px-" + a.code); el.textContent = px(a.code, p);
     if (flash && flash[a.code]) { el.classList.remove("flash-up", "flash-down"); void el.offsetWidth; el.classList.add(flash[a.code] > 0 ? "flash-up" : "flash-down"); }
     const c = $("#ch-" + a.code); c.className = "ch " + cls(ch); c.textContent = `${sgn(ch, a.dp)}  ${sgn(ch / pc * 100)}%`;
+    const b = CANDLES[a.code].at(-1);
+    $("#lo-" + a.code).textContent = "L " + px(a.code, b.l); $("#hi-" + a.code).textContent = "H " + px(a.code, b.h);
+    $("#rp-" + a.code).style.left = `calc(${((p - b.l) / (b.h - b.l || 1) * 100).toFixed(1)}% - 1px)`;
   });
   $$(".tk").forEach(t => t.classList.toggle("on", t.dataset.asset === S.asset));
 }
@@ -760,7 +783,7 @@ function drawGP() {
   ctx.strokeStyle = C["line-2"]; ctx.beginPath(); ctx.moveTo(x1 + .5, 0); ctx.lineTo(x1 + .5, H); ctx.moveTo(0, y1 + .5); ctx.lineTo(W, y1 + .5); ctx.stroke();
 
   // moving averages
-  [[ind.s20, C["amber-lo"]], [ind.s50, C["text-3"]]].forEach(([s, col]) => {
+  [[ind.s20, C["text-2"]], [ind.s50, C["amber-lo"]]].forEach(([s, col]) => {
     ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.beginPath(); let st = false;
     bars.forEach((_, i) => { const v = s[off + i]; if (isNaN(v)) return; const x = X(i), y = Y(v); st ? ctx.lineTo(x, y) : ctx.moveTo(x, y); st = true; }); ctx.stroke();
   });
@@ -893,7 +916,7 @@ function commitDecision() {
   ALERTS.unshift([Date.now(), "INFO", `Decision logged: ${dr} ${s.asset} ${s.dir}`]);
   SUGG.splice(S.sel, 1); S.drawer = null;
   toast(`LOGGED · ${dr} ${s.asset} ${s.dir} → JRNL`);
-  renderSugg(); renderJournal(); renderSys(); drawGP(); legend(CANDLES[S.asset].at(-1), CANDLES[S.asset].at(-2).c);
+  renderSugg(); renderJournal(); renderSys(); renderTape(); drawGP(); legend(CANDLES[S.asset].at(-1), CANDLES[S.asset].at(-2).c);
 }
 
 /* ---------------- journal ---------------- */
@@ -949,17 +972,17 @@ function drawDrift() {
   cv.forEach((p, i) => { if (new Date(p.t).getUTCDate() !== 1) return; const x = Math.round(X(i)) + .5; ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); ctx.fillStyle = C["text-3"]; ctx.fillText(new Date(p.t).toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase(), x, y1 + 5); });
   ctx.strokeStyle = C["line-2"]; ctx.beginPath(); ctx.moveTo(x1 + .5, 0); ctx.lineTo(x1 + .5, H); ctx.moveTo(0, y1 + .5); ctx.lineTo(W, y1 + .5); ctx.stroke();
   // 1σ band
-  ctx.fillStyle = C.amber; ctx.globalAlpha = .08; ctx.beginPath();
+  ctx.fillStyle = C.text; ctx.globalAlpha = .06; ctx.beginPath();
   cv.forEach((p, i) => i ? ctx.lineTo(X(i), Y(p.exp + p.band)) : ctx.moveTo(X(i), Y(p.exp + p.band)));
   for (let i = cv.length - 1; i >= 0; i--) ctx.lineTo(X(i), Y(cv[i].exp - cv[i].band)); ctx.fill(); ctx.globalAlpha = 1;
   const line = (k, col, dash, w) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.setLineDash(dash); ctx.beginPath(); cv.forEach((p, i) => i ? ctx.lineTo(X(i), Y(p[k])) : ctx.moveTo(X(i), Y(p[k]))); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1; };
-  line("exp", C.amber, [5, 4], 1.2); line("live", C.text, [], 1.6);
-  const e = cv.at(-1); ctx.fillStyle = C.text; ctx.beginPath(); ctx.arc(X(cv.length - 1), Y(e.live), 3, 0, 7); ctx.fill();
-  axisLabel(ctx, x1 + 1, Y(e.live), axisW - 1, fmt(e.live, 1), C.text, "#000");
-  axisLabel(ctx, x1 + 1, Y(e.exp), axisW - 1, fmt(e.exp, 1), C.amber, "#000");
+  line("exp", C["text-2"], [5, 4], 1.2); line("live", C.amber, [], 1.6);
+  const e = cv.at(-1); ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(X(cv.length - 1), Y(e.live), 3, 0, 7); ctx.fill();
+  axisLabel(ctx, x1 + 1, Y(e.exp), axisW - 1, fmt(e.exp, 1), C["text-2"], "#000");
+  axisLabel(ctx, x1 + 1, Y(e.live), axisW - 1, fmt(e.live, 1), C.amber, "#000");
   ctx.font = UI; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  ctx.fillStyle = C.amber; ctx.fillRect(10, 12, 14, 2); ctx.fillText("BACKTEST EXPECTED ±1σ", 30, 13);
-  ctx.fillStyle = C.text; ctx.fillRect(160, 12, 14, 2); ctx.fillText("LIVE EQUITY", 180, 13);
+  ctx.fillStyle = C["text-2"]; ctx.fillRect(10, 12, 14, 2); ctx.fillText("BACKTEST EXPECTED ±1σ", 30, 13);
+  ctx.fillStyle = C.amber; ctx.fillRect(160, 12, 14, 2); ctx.fillText("LIVE EQUITY", 180, 13);
   ctx.fillStyle = C["text-3"]; ctx.fillText("INDEXED TO 100 · 90 DAYS", 262, 13);
 }
 
@@ -993,7 +1016,7 @@ function renderSys() {
 
 /* ---------------- help + commands ---------------- */
 const FUNCS = [
-  ["HELP", "F1", "Commands and keys"], ["MON", "F2", "Monitor: the four-panel workspace"], ["GP", "F3", "Price chart for the active asset"],
+  ["HELP", "F1", "Commands and keys"], ["MON", "F2", "Monitor: chart with the watchlist"], ["GP", "F3", "Price chart for the active asset"],
   ["SUGG", "F4", "Suggestions awaiting your decision"], ["JRNL", "F5", "Trade journal"], ["DRIFT", "F6", "Backtest vs live performance"],
   ["ASTRO", "F7", "Transit calendar (research)"], ["SYS", "F8", "Runner, feeds, alerts and config"],
 ];
@@ -1031,11 +1054,11 @@ function ghost() {
 }
 
 /* ---------------- view + asset ---------------- */
-const PANELS = ["GP", "SUGG", "DRIFT", "JRNL", "ASTRO", "SYS", "HELP"];
+const PANELS = ["GP", "WATCH", "SUGG", "DRIFT", "JRNL", "ASTRO", "SYS", "HELP"];
 function setView(v) {
   S.view = v; const main = $("#main");
   main.className = v === "MON" ? "mon" : "max";
-  PANELS.forEach(p => $("#p-" + p).hidden = v === "MON" ? !["GP", "SUGG", "DRIFT", "JRNL"].includes(p) : p !== v);
+  PANELS.forEach(p => $("#p-" + p).hidden = v === "MON" ? !["GP", "WATCH"].includes(p) : p !== v);
   renderFkeys(); requestAnimationFrame(() => { drawGP(); drawDrift(); });
   if (v === "SYS") renderSys();
 }
