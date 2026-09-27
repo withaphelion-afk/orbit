@@ -60,11 +60,15 @@ This README is the single source of truth for planning — update it in place wh
 
 ## Status
 
-- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`, `EphemerisSnapshot`) — done.
+- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`, `EphemerisSnapshot`, `FeatureRecord`) — done.
 - `data/binance.py` + `data/silver.py` — fetch BTC/ETH/SOL and silver daily candles from public APIs (no keys needed) — done. Run with `uv run python scripts/fetch_data.py`.
 - `data/ephemeris.py` — daily planetary positions (zodiac sign + retrograde) via Skyfield, 60-year vectorized backfill — done. Run with `uv run python scripts/fetch_ephemeris.py`.
 - `data/storage.py` — save/load candles and ephemeris snapshots as CSV under `data/` — done.
-- `features/regime.py` — the regime gate: reads BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY — done. This gates whether per-asset entries are considered at all.
+- `features/store.py` — the feature store: append-only CSV per asset, long format (date, name, value) — done.
+- `features/technical.py` — daily return, close vs. 50/200-day SMA, 20-day volatility — done.
+- `features/regime.py` — the regime gate (BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY) plus `compute_regime_series` to log its full history, not just a live reading — done.
+- `features/astro.py` — encodes ephemeris sign/retrograde as numeric features per tracked asset — done.
+- `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
 - Per-asset entry scoring, the actual strategy rules, backtesting, the journal, and the 24/7 runner — not started yet.
 
 ## Full plan
@@ -110,7 +114,7 @@ Notes from researching how professional quant systems structure this, so we buil
 | --- | --- | --- |
 | 1. Define the strategy | Assets, timeframe, entry/exit rules, risk rules on paper | Not started |
 | 2. Data pipeline | Price data + ephemeris data, stored locally | Done |
-| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Not started |
+| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Feature store built (technical + regime + astro); backtest engine itself not started |
 | 4. Trade journal + scorecard | Logging schema for every signal and decision | Not started |
 | 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Not started |
 | 6. Feedback loop | Review cadence to correct/reweight the scorecard | Not started |
