@@ -94,6 +94,9 @@ class Planet(str, Enum):
     URANUS = "URANUS"
     NEPTUNE = "NEPTUNE"
     PLUTO = "PLUTO"
+    # The lunar nodes (Jyotish grahas). Not bodies: computed, not observed (see vedic/sky.py).
+    RAHU = "RAHU"
+    KETU = "KETU"
 
 
 class EphemerisSnapshot(BaseModel):
@@ -154,9 +157,22 @@ class JournalEntry(BaseModel):
 
 
 class TransitEventType(str, Enum):
-    INGRESS = "INGRESS"  # planet enters a new sign
-    STATION_RETROGRADE = "STATION_RETROGRADE"  # first day of apparent backward motion
-    STATION_DIRECT = "STATION_DIRECT"  # first day moving forward again
+    """Vedic (Jyotish) events; see orbit/vedic/events.py for exact definitions."""
+
+    INGRESS = "INGRESS"  # graha enters a new rashi (sidereal sign)
+    NAKSHATRA_INGRESS = "NAKSHATRA_INGRESS"  # graha enters a new nakshatra
+    STATION_RETROGRADE = "STATION_RETROGRADE"  # graha turns vakri
+    STATION_DIRECT = "STATION_DIRECT"  # graha turns margi
+    YUTI = "YUTI"  # two grahas come into the same rashi
+    DRISHTI = "DRISHTI"  # a graha starts to aspect another (graha drishti, by rashi)
+    COMBUSTION = "COMBUSTION"  # graha becomes asta (too close to the Sun)
+    GRAHA_YUDDHA = "GRAHA_YUDDHA"  # two of Mars..Saturn come within 1 degree
+    AMAVASYA = "AMAVASYA"  # new moon
+    PURNIMA = "PURNIMA"  # full moon
+    SOLAR_ECLIPSE = "SOLAR_ECLIPSE"  # surya grahan
+    LUNAR_ECLIPSE = "LUNAR_ECLIPSE"  # chandra grahan
+    YOGA = "YOGA"  # a named yoga begins (Kaal Sarp, Gajakesari, Shani-Mangal)
+    CLUSTER = "CLUSTER"  # several malefic (or benefic) relations begin within a week
 
 
 class SpeedClass(str, Enum):
@@ -170,12 +186,13 @@ class SpeedClass(str, Enum):
 
 
 class TransitEvent(BaseModel):
-    """One discrete transit: (planet, event_type, from_state, to_state, date).
+    """One discrete Vedic event: (planet, event_type, from_state, to_state, date).
 
-    For an ingress the states are sign names; for a station they are
-    "DIRECT" / "RETROGRADE". `backward` marks an ingress made while retrograde
-    (slipping back into the previous sign); `reentry` marks the forward
-    ingress that follows one, so first entries can be analysed on their own.
+    For an ingress the states are rashi (or nakshatra) names; for a station
+    "MARGI" / "VAKRI"; for drishti, the house number of the aspect. `backward`
+    marks an ingress made while vakri (slipping back into the previous rashi);
+    `reentry` marks the forward ingress that follows one, so first entries can
+    be analysed on their own. `date` is the UTC day of `exact_time`.
     """
 
     planet: Planet
@@ -185,9 +202,11 @@ class TransitEvent(BaseModel):
     to_state: str
     backward: bool = False
     reentry: bool = False
-    # The moment itself, to the second (analysis/exact_times.py). None when not
-    # computed, or for a station whose speed change couldn't be bracketed.
+    # The moment itself, to the second. None when it couldn't be bracketed.
     exact_time: datetime | None = None
+    other_planet: Planet | None = None  # the second graha, for yuti / drishti / yuddha
+    retro_involved: bool = False  # a participating graha was vakri at the time
+    label: str = ""  # human-readable, e.g. "Shani (Saturn) enters Meena (Pisces)"
 
 
 class Outcome(str, Enum):

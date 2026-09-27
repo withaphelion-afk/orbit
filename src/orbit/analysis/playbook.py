@@ -2,7 +2,7 @@
 
 Order of operations for one run:
 
-1. Detect every transit event from the stored ephemeris (past and upcoming).
+1. Load every Vedic event (orbit/vedic/events.py), past and upcoming.
 2. Write the hypothesis list to data/analysis/hypotheses.json *before* any
    test runs, and append this run to runs.jsonl. Re-running on the same data
    is another look at it; the run count is kept so that's visible.
@@ -60,17 +60,16 @@ from orbit.data.storage import load_candles
 from orbit.features.arrays import rolling_mean, true_range
 from orbit.features.regime import regime_gate_by_day, trend_values
 from orbit.analysis import confidence, timing
-from orbit.analysis.exact_times import refine
 from orbit.analysis.exceptions import annotate, regime_per_bar, volatility_percentiles
 from orbit.analysis.outcomes import BIG_DOWN, BIG_UP, CODE_TO_OUTCOME, SIDEWAYS, UNDEFINED, HorizonOutcomes, bar_index_for, label_outcomes
 from orbit.analysis.patterns import Pattern, build_patterns
-from orbit.analysis.series import PriceSeries, day64, load_planet_series, load_price_series
+from orbit.analysis.series import PriceSeries, day64, load_price_series
 from orbit.analysis.sideways import state_masks, test_states
 from orbit.analysis.significance import Spectrum, benjamini_hochberg, hypergeom_sf, shift_null_counts, shift_p_value
-from orbit.analysis.transit_events import detect_all
+from orbit.vedic.events import load_events as load_vedic_events
+from orbit.vedic.states import States, build_states
 
 ANALYSIS_DIR = DATA_DIR / "analysis"
-EXACT_SINCE = datetime(2000, 1, 1, tzinfo=timezone.utc)  # exact moments computed from here (all price history is later)
 ALL_ASSETS = [Asset.BTC, Asset.ETH, Asset.SOL, Asset.SILVER]
 TARGETS = {BIG_UP: "big_up", BIG_DOWN: "big_down", SIDEWAYS: "sideways"}
 DESCRIBE = {Outcome.BIG_UP: "a big up-move", Outcome.BIG_DOWN: "a big down-move", Outcome.SIDEWAYS: "a sideways stretch"}
@@ -210,7 +209,7 @@ def _daily_atr_fraction(series: PriceSeries) -> np.ndarray:
     return atr / series.close
 
 
-def build_asset_playbook(asset, series, patterns, events, planets, now, hourly: PriceSeries | None = None) -> tuple[AssetPlaybook, dict[str, int]]:
+def build_asset_playbook(asset, series, patterns, events, states: States, now, hourly: PriceSeries | None = None) -> tuple[AssetPlaybook, dict[str, int]]:
     horizons = sorted({h for hs in PLAYBOOK_HORIZONS.values() for h in hs} | set(SIDEWAYS_HORIZONS))
     outcomes = {h: label_outcomes(series, h) for h in horizons}
     targets = {h: {t: _target(o, t) for t in TARGETS} for h, o in outcomes.items()}
@@ -307,7 +306,7 @@ def build_asset_playbook(asset, series, patterns, events, planets, now, hourly: 
     annotate(results, series, event_bars, regime_per_bar(series, regime_by_day), scope, volatility_percentiles(series))
 
     # Chop track.
-    masks = state_masks(series, planets)
+    masks = state_masks(series, states)
     side_tests = [st for h in SIDEWAYS_HORIZONS for st in test_states(outcomes[h], masks)]
     tested = [k for k, st in enumerate(side_tests) if st.p is not None]
     qmap = dict(zip(tested, benjamini_hochberg([side_tests[k].p for k in tested])))
@@ -367,15 +366,13 @@ def _parameters() -> dict:
         "include_moon": INCLUDE_MOON,
         "null": "circular shift of the event calendar (FFT); negative-binomial tail below shift resolution; exact hypergeometric uniform-date check",
         "thresholds": "full-history percentiles (retrospective only; not for live use)",
+        "astrology": "Vedic (Jyotish): sidereal, Chitrapaksha ayanamsa, 9 grahas",
     }
 
 
 def load_events() -> list[TransitEvent]:
-    """Every transit from the stored ephemeris, with exact moments from EXACT_SINCE on."""
-    planets = load_planet_series()
-    if not planets:
-        raise RuntimeError("no ephemeris stored; run scripts/fetch_ephemeris.py first")
-    return refine(detect_all(planets), since=EXACT_SINCE)
+    """Every Vedic event (orbit/vedic/events.py), each with its exact moment."""
+    return load_vedic_events()
 
 
 def build_all(
@@ -387,10 +384,10 @@ def build_all(
     say = progress or (lambda step, frac: None)
     now = datetime.now(timezone.utc)
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
-    say("Loading ephemeris and computing exact transit moments", 0.02)
-    planets = load_planet_series()
+    say("Loading the Vedic sky and its events", 0.02)
     if events is None:
         events = load_events()
+    states = build_states(events=events)
     patterns = build_patterns(events, INCLUDE_MOON)
 
     # Pre-registration record and run log, written before any test.
@@ -423,7 +420,7 @@ def build_all(
             asset_meta[asset.value] = {"skipped": "not enough stored price history"}
             continue
         hourly = load_price_series(asset, timeframe="1h")
-        playbook, counts = build_asset_playbook(asset, series, patterns, events, planets, now, hourly if len(hourly) else None)
+        playbook, counts = build_asset_playbook(asset, series, patterns, events, states, now, hourly if len(hourly) else None)
         tests_by_family.update(counts)
         (ANALYSIS_DIR / f"{asset.value}.json").write_text(playbook.model_dump_json(), encoding="utf-8")
         labels: dict[str, int] = {}

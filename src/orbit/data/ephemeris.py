@@ -94,7 +94,7 @@ def compute_snapshot(planet: Planet, date: datetime) -> EphemerisSnapshot:
 
 def compute_all_snapshots(date: datetime) -> list[EphemerisSnapshot]:
     """Position + retrograde status for every tracked planet, on one date."""
-    return [compute_snapshot(planet, date) for planet in Planet]
+    return [compute_snapshot(planet, date) for planet in BODY_NAMES]
 
 
 def backfill_planet(planet: Planet, start_date: datetime, days: int) -> list[EphemerisSnapshot]:

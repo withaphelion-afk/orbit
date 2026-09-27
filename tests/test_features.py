@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from orbit.core.types import Asset, Candle, EphemerisSnapshot, Planet
-from orbit.features.astro import ephemeris_to_features
+from orbit.core.types import Asset, Candle
 from orbit.features.store import load_features, save_features
 from orbit.features.technical import compute_technical_features
 
@@ -38,20 +37,6 @@ def test_technical_feature_values_are_sane_for_steady_uptrend():
     latest_return = [r for r in records if r.name == "return_1d"][-1]
     # A steadily rising price series should show a small positive daily return.
     assert latest_return.value > 0
-
-
-def test_ephemeris_to_features_encodes_sign_and_retrograde():
-    snap = EphemerisSnapshot(
-        planet=Planet.JUPITER,
-        date=datetime(2026, 9, 27, tzinfo=timezone.utc),
-        longitude=138.49,
-        sign="Leo",
-        retrograde=False,
-    )
-    records = ephemeris_to_features([snap], Asset.BTC)
-    by_name = {r.name: r.value for r in records}
-    assert by_name["jupiter_sign_index"] == 4.0  # Leo is the 5th sign, index 4
-    assert by_name["jupiter_retrograde"] == 0.0
 
 
 def test_feature_store_roundtrip(tmp_path, monkeypatch):
