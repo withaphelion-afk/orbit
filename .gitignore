@@ -4,6 +4,7 @@ __pycache__/
 .env
 data/*.csv
 data/ephemeris/
+data/features/
 .pytest_cache/
 *.egg-info/
 *.bsp

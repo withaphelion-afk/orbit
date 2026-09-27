@@ -110,6 +110,26 @@ class EphemerisSnapshot(BaseModel):
     retrograde: bool
 
 
+class FeatureRecord(BaseModel):
+    """One computed signal value, for one asset, on one day.
+
+    This is what the feature store holds — the layer between raw data
+    (data/) and strategy logic (strategy/). Every feature (technical,
+    regime, astro) gets written in this same shape, keyed by
+    (asset, name, date), so the strategy layer and any future ML model
+    can read them all the same way without caring how each was computed.
+
+    `value` is always a float so features can be combined/scored
+    uniformly — categorical features (e.g. a zodiac sign) get encoded as
+    0/1 flags (one FeatureRecord per category) rather than stored as text.
+    """
+
+    asset: Asset
+    name: str
+    date: datetime
+    value: float
+
+
 class JournalEntry(BaseModel):
     """A logged suggestion plus what you did with it and how it played out.
 

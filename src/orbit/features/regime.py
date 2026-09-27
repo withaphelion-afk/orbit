@@ -19,10 +19,12 @@ regime is CHOPPY, since that means the market lacks a clear shared trend.
 
 from __future__ import annotations
 
-from orbit.core.types import Candle, Regime
+from orbit.core.types import Asset, Candle, FeatureRecord, Regime
 
 SHORT_WINDOW = 50
 LONG_WINDOW = 200
+
+_REGIME_VALUE = {Regime.BULL: 1.0, Regime.BEAR: -1.0, Regime.CHOPPY: 0.0}
 
 
 def simple_moving_average(candles: list[Candle], window: int) -> float:
@@ -54,3 +56,45 @@ def compute_regime(btc_candles: list[Candle], eth_candles: list[Candle]) -> Regi
     if btc_trend == eth_trend:
         return btc_trend
     return Regime.CHOPPY
+
+
+def compute_regime_series(
+    btc_candles: list[Candle], eth_candles: list[Candle], target_asset: Asset
+) -> list[FeatureRecord]:
+    """The regime gate's reading for every day with enough history behind
+    it, as FeatureRecords for `target_asset` (BULL=1, BEAR=-1, CHOPPY=0).
+
+    This lets the regime gate's own history be logged and later checked
+    against how well it actually predicted moves, same as any other
+    feature — not just used as a live, one-off reading.
+    """
+    if len(btc_candles) <= LONG_WINDOW or len(eth_candles) <= LONG_WINDOW:
+        return []
+
+    # Candle histories may not start on the same date — align by date, not index.
+    eth_by_date = {c.timestamp: c for c in eth_candles}
+
+    records = []
+    for i in range(LONG_WINDOW, len(btc_candles)):
+        btc_window = btc_candles[: i + 1]
+        today = btc_window[-1]
+
+        if today.timestamp not in eth_by_date:
+            continue
+        eth_today_index = next(
+            j for j, c in enumerate(eth_candles) if c.timestamp == today.timestamp
+        )
+        if eth_today_index < LONG_WINDOW:
+            continue
+        eth_window = eth_candles[: eth_today_index + 1]
+
+        regime = compute_regime(btc_window, eth_window)
+        records.append(
+            FeatureRecord(
+                asset=target_asset,
+                name="regime",
+                date=today.timestamp,
+                value=_REGIME_VALUE[regime],
+            )
+        )
+    return records
