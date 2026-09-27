@@ -95,6 +95,15 @@ Treated as one testable input among others — back-tested with the same rigor a
 - **Significance testing**: long-cycle transits (e.g. Jupiter ~12 years) give very few historical samples — explicitly test whether any correlation is statistically real or noise before trusting it.
 - **Status**: ephemeris data pipeline built (60 years of daily positions for all 10 planets, verified against known real transit dates). Event tagging + price join not started yet.
 
+### Signal research reference
+
+Notes from researching how professional quant systems structure this, so we build on established practice instead of guesswork:
+
+- **Signal categories worth having**: price-action/technical (momentum, mean reversion, volatility), volume/liquidity, on-chain (crypto: exchange flows, MVRV, SOPR), derivatives positioning (crypto: funding rate, open interest), macro (silver: real yields, DXY, gold/silver ratio), positioning (silver: CFTC COT report — released with a lag, watch for look-ahead bias), cross-asset correlation.
+- **Telling a real signal from noise**: keep out-of-sample data untouched until final testing; use walk-forward validation (fit on a rolling past window, test on the next period, roll forward); watch for look-ahead bias (only use data available at decision time); correct for multiple testing — the more variants tried, the more likely the best result is luck (a new factor should arguably clear a t-stat of 3.0, not 2.0). For small-sample effects like astro transits specifically: write the hypothesis down *before* looking at the data, log every transit tested as a trial count, use permutation tests (shuffle event dates thousands of times, see how often random dates beat the real result), and treat ~10-30 historical events as "worth monitoring," never "proven."
+- **Combining signals**: convert each to a z-score (standard deviations from its own average) and combine with weights close to equal — optimized weights tend to overfit. Uncorrelated signals add real value; five signals all measuring momentum are worth about one. Regime-conditional models (classify the market state first, then decide which signals/exposures apply) are the standard structure — confirms our regime-gate + per-asset-entry design matches how real quant shops work. One caveat: regime classifiers are slow to recognize a *new* regime, so the gate itself needs testing too, not just what sits on top of it.
+- **Feature store concept**: a central, timestamped table of computed signals sitting between raw data and strategy logic — ingestion writes raw data, features are computed once and "point-in-time correct" (timestamped with when they'd actually have been knowable), and strategies only ever read features, never raw data directly. Stops indicators being recomputed slightly differently in different places and prevents look-ahead leakage. This is the model for our own `features/` layer.
+
 ### Build plan
 
 | Phase | Description | Status |
