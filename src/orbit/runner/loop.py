@@ -23,6 +23,7 @@ from orbit.core.types import Asset
 from orbit.data.pipeline import fetch_all_ephemeris, fetch_all_prices
 from orbit.features.pipeline import compute_all_features
 from orbit.features.store import load_features
+from orbit.runner import status
 
 LOG_DIR = DATA_DIR / "logs"
 
@@ -69,14 +70,18 @@ def run_once(logger: logging.Logger) -> None:
 def run_forever(interval_seconds: int = RUNNER_INTERVAL_SECONDS) -> None:
     logger = _setup_logging()
     logger.info(f"Orbit runner starting. Cycle interval: {interval_seconds}s")
+    status.mark_started(interval_seconds)
 
     while True:
+        status.mark_cycle_start()
         try:
             run_once(logger)
-        except Exception:
+            status.mark_cycle_end(ok=True)
+        except Exception as exc:
             # Swallow and log — a bad cycle (network blip, rate limit, ...)
             # must never take down a process meant to run 24/7.
             logger.exception("Cycle failed, will retry next interval.")
+            status.mark_cycle_end(ok=False, error=f"{type(exc).__name__}: {exc}")
 
         time.sleep(interval_seconds)
 

@@ -1,0 +1,82 @@
+import warnings
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+warnings.filterwarnings("ignore", message=".*httpx.*")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from orbit.api import app as app_module  # noqa: E402
+from orbit.api import store  # noqa: E402
+from orbit.core.types import Asset, Candle  # noqa: E402
+
+
+@pytest.fixture
+def client():
+    return TestClient(app_module.create_app(live=False))
+
+
+def _bars(asset: Asset, days: int, start_price: float = 100.0) -> list[Candle]:
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return [
+        Candle(asset=asset, timestamp=today - timedelta(days=days - 1 - i), open=start_price + i, high=start_price + i + 1,
+               low=start_price + i - 1, close=start_price + i, volume=1, source="test")
+        for i in range(days)
+    ]
+
+
+def test_unbuilt_layers_answer_honestly(client):
+    assert client.get("/api/suggestions").json() == []
+    assert client.get("/api/journal").json() == []
+    assert client.post("/api/suggestions/abc/decision").status_code == 501
+    drift = client.get("/api/drift")
+    assert drift.status_code == 404 and "backtest" in drift.json()["detail"]
+
+
+def test_missing_history_is_a_clear_404(client, monkeypatch):
+    monkeypatch.setattr(store, "candles", lambda asset: [])
+    r = client.get("/api/candles/BTC")
+    assert r.status_code == 404 and "fetch_data" in r.json()["detail"]
+
+
+def test_system_reports_never_run_and_components(client, monkeypatch):
+    monkeypatch.setattr(app_module, "read_status", lambda: None)
+    monkeypatch.setattr(store, "candles", lambda asset: [])
+    monkeypatch.setattr(store, "history_report", lambda: {})
+    monkeypatch.setattr(store, "playbook_meta", lambda: None)
+    monkeypatch.setattr(store, "runner_log", lambda: [])
+    body = client.get("/api/system").json()
+    assert body["runner"]["state"] == "NEVER_RUN"
+    assert body["components"] == {"runner": False, "playbook": False, "strategy": False, "journal": False, "backtest": False, "alerts": False}
+    assert body["auto_execution"] is False
+
+
+def test_system_live_when_recent_cycle(client, monkeypatch):
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(app_module, "read_status", lambda: {"started_at": now.isoformat(), "interval_seconds": 3600,
+                                                            "last_cycle_finished_at": now.isoformat(), "last_cycle_ok": True, "cycles": 3})
+    monkeypatch.setattr(store, "candles", lambda asset: [])
+    monkeypatch.setattr(store, "history_report", lambda: {})
+    monkeypatch.setattr(store, "playbook_meta", lambda: None)
+    monkeypatch.setattr(store, "runner_log", lambda: [])
+    assert client.get("/api/system").json()["runner"]["state"] == "LIVE"
+
+
+def test_quotes_from_stored_bars(client, monkeypatch):
+    bars = {a: _bars(a, 260) for a in Asset}
+    monkeypatch.setattr(store, "candles", lambda asset: bars[asset])
+    monkeypatch.setattr(store, "regime_by_day", lambda asset: ({bars[asset][-2].timestamp: "BULL"}, "SHARED"))
+    quotes = client.get("/api/quotes").json()
+    btc = next(q for q in quotes if q["asset"] == "BTC")
+    # Today's bar is still forming: previous close is yesterday's, last is today's.
+    assert btc["prev_close"] == bars[Asset.BTC][-2].close
+    assert btc["last"] == bars[Asset.BTC][-1].close
+    assert btc["source"] == "STORED" and btc["regime"] == "BULL"
+    assert len(btc["sparkline"]) == 30
+
+
+def test_playbook_404_before_first_build(client, monkeypatch):
+    monkeypatch.setattr(store, "playbook_meta", lambda: None)
+    monkeypatch.setattr(store, "playbook", lambda asset: None)
+    assert client.get("/api/playbook").status_code == 404
+    assert client.get("/api/playbook/BTC").status_code == 404
