@@ -51,11 +51,12 @@ That installs dependencies into a local `.venv` and confirms the test suite pass
 Then build the local data. None of these steps needs an API key:
 
 ```bash
-uv run python scripts/fetch_data.py        # full price history; the first run takes ~30s, later runs fetch only new bars
+uv run python scripts/fetch_data.py        # full daily + hourly history; the first run takes ~8 min, later runs fetch only new bars
+uv run python scripts/backfill_silver.py   # one-time spot-silver download from Dukascopy (throttled: can take hours; resumable)
 uv run python scripts/fetch_ephemeris.py   # planetary positions, 60 years back and 2 ahead
 uv run python scripts/compute_features.py  # technical, regime and astro features
-uv run python scripts/build_playbook.py    # transit playbook (~25s)
-uv run python scripts/placebo_check.py     # optional sanity check of the playbook method (~2 min)
+uv run python scripts/build_playbook.py    # transit playbook, daily + hourly (~1.5 min)
+uv run python scripts/placebo_check.py     # optional sanity check of the playbook method (~12 min)
 uv run python -m orbit.api                 # API for the web terminal, on http://127.0.0.1:8000
 ```
 
@@ -104,7 +105,8 @@ This README is the single source of truth for planning — update it in place wh
   - BTC: Bitstamp from 2013, then Binance from Aug 2017.
   - ETH: Coinbase from May 2016, then Binance from Aug 2017.
   - SOL: Binance from Aug 2020.
-  - Silver: Yahoo futures from Aug 2000.
+  - Silver: Dukascopy spot XAG/USD from May 2003 (Yahoo only serves 2 years of hourly silver, and futures jump at every contract roll). `scripts/backfill_silver.py` downloads it once; the feed throttles hard, so it's paced, cached and resumable, and the runner tops it up each cycle. Until the cache is complete, the older Yahoo daily series stays in place.
+  - Hourly bars too, from the same venues: BTC 2013+ (~120k bars), ETH 2016+, SOL 2020+, silver 2003+.
   - Before joining two venues it checks that their closes agree over the overlap (currently a median gap of about 0.45%) and refuses if they don't. Every bar records its source, and each build writes `data/history_report.json`.
   - Fetchers live in `data/binance.py`, `bitstamp.py`, `coinbase.py` and `silver.py`, sharing a retrying HTTP helper. Run with `uv run python scripts/fetch_data.py`.
 - `data/ephemeris.py` — daily planetary positions (zodiac sign + retrograde) via Skyfield, 60 years back and 2 years ahead, dated at UTC midnight like the prices — done. Run with `uv run python scripts/fetch_ephemeris.py`.
@@ -116,7 +118,9 @@ This README is the single source of truth for planning — update it in place wh
 - `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
 - `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
 - `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process. It writes a heartbeat (`data/runner_status.json`) that the API reports — done, verified against real data end to end.
-- `analysis/` — the transit playbook: sign ingresses and retrograde stations, outcomes over several forward horizons, significance tests, confidence labels, exception context and a chop track — done. See "Astro-transit research track" below for method and findings. Run with `uv run python scripts/build_playbook.py`.
+- `analysis/` — the transit playbook: sign ingresses and retrograde stations, outcomes over several forward horizons, significance tests, confidence labels, exception context and a chop track — done. Each transit also has its exact moment to the second and an hourly drill-down from it. See "Astro-transit research track" below for method and findings.
+  - Run it from the web terminal (**RUN ANALYSIS** on ASTRO → PLAYBOOK, or on SYS), from the runner's daily schedule, or with `uv run python scripts/build_playbook.py`.
+  - Runs from the button and the schedule are background jobs (`analysis/jobs.py`): one at a time, with live progress, a log, and a record of which labels changed.
 - `api/` — FastAPI server the web terminal reads: stored data, the playbook, runner status, and live prices over `/ws` — done. Run with `uv run python -m orbit.api`.
 - `web/` — the React trading terminal, on real data only — done. It has a command line with a Ctrl+K palette and F-key screens:
   - MON: chart and watchlist
@@ -132,7 +136,9 @@ This README is the single source of truth for planning — update it in place wh
 uv run python -m orbit.runner.loop
 ```
 
-Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Logs go to console and `data/logs/runner.log`. This process needs to actually stay running somewhere — for now that's a terminal you leave open; the "VPS vs home server" open decision below is about making that permanent.
+Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Logs go to console and `data/logs/runner.log`.
+
+It also starts the analysis every day at **00:30 UTC** (`ANALYSIS_DAILY_AT_UTC`), after refreshing data so the new daily bar is included. Sunday's run also runs the placebo check (`PLACEBO_WEEKDAY`). If the machine was off at 00:30, it catches up as soon as the runner is up that day. It skips the run when one already succeeded after that day's slot, and retries a failed run at most 3 times, an hour apart. Windows has no cron, so the schedule lives in the runner rather than the OS. This process needs to actually stay running somewhere — for now that's a terminal you leave open; the "VPS vs home server" open decision below is about making that permanent.
 
 ### Running the web API (backend for the React frontend)
 
@@ -177,7 +183,14 @@ Treated as one testable input among others — back-tested with the same rigor a
 - **Ephemeris source**: Skyfield (pure Python, no compiler needed) — exact planetary positions/transits for any date, free, precise. (Originally planned as Swiss Ephemeris via `pyswisseph`, but that needs a C++ compiler not available on this machine.)
 - **Event tagging**: a table of historical transit events (sign changes, retrogrades, conjunctions/aspects) mapped to date ranges, joined against price history to compute frequency, average move and win rate after each event type.
 - **Significance testing**: long-cycle transits (e.g. Jupiter ~12 years) give very few historical samples — explicitly test whether any correlation is statistically real or noise before trusting it.
-- **Status**: the transit playbook is built (`analysis/`, `scripts/build_playbook.py`).
+- **Status**: the transit playbook is built (`analysis/`), with a run button and a daily schedule.
+- **Exact moments**: every transit since 2000 is refined to the second from the JPL ephemeris (bisection on the sign boundary for ingresses, on zero speed for stations). Events are dated on the UTC day they really happened: the midnight-based daily detection sees ingresses a day late and stations up to two days late.
+- **Hourly drill-down**: from each exact moment, the same big-up / big-down / sideways test over 6, 24 and 72 hourly bars, with its own FDR family per asset. Each occurrence also records:
+  - what price did in the 72 hours before
+  - how many hours until price had moved one normal day's range (daily ATR) in the move's direction
+  - when the largest move in that direction came, and its size
+
+  The terminal shows each occurrence's hourly chart, with those points marked.
 - **Events**: sign ingresses (first entries tested; backward ingresses and re-entries recorded but not double-counted) and retrograde stations (the retrograde flag with one- and two-day flickers removed). Aspects and conjunctions are deferred.
 - **Outcomes**: forward returns over horizons that depend on planet speed:
   - Moon: 1, 3 and 5 bars
@@ -198,15 +211,16 @@ Treated as one testable input among others — back-tested with the same rigor a
   - the volatility percentile
   - other transits in the same window, and any that lean the opposite way
 - **Chop track**: separately, which transit *states* (e.g. "Mercury retrograde", "Saturn in Pisces") coincide with sideways markets. The sample size counted is distinct episodes, not days.
-- **Validation**: `scripts/placebo_check.py` moves every transit date by arbitrary offsets and re-runs everything; any moderate or strong result on those fake calendars is a false discovery.
+- **Validation**: `scripts/placebo_check.py` moves every transit date (and exact moment) by arbitrary offsets and re-runs everything, daily and hourly; any moderate or strong result on those fake calendars is a false discovery.
   - The first version produced false discoveries in 6 of 32 placebo runs, caused by separate correction families and a normal-curve tail. Both were fixed.
-  - It now produces 0 of 32.
+  - It now produces 0 of 32 (daily) and 0 of 32 (hourly timing).
   - A planted-effect unit test confirms the method still catches a real effect.
-- **Findings so far (Sept 2026)**: 2,241 tests across four assets.
-  - **No transit pattern survives multiple-testing correction for any asset.** That is 0 strong and 0 moderate.
-  - Some patterns are "weak": nominally significant, but at a rate consistent with chance (about 3–6% of tests fall below p < 0.05). They're worth watching, not trading.
+- **Findings so far (Sept 2026)**: 3,177 tests across four assets, daily and hourly.
+  - **No transit pattern survives multiple-testing correction for any asset, at daily or hourly resolution.** That is 0 strong and 0 moderate.
+  - Some patterns are "weak" (nominally significant), at about the rate chance alone produces. Dating events on their real day (instead of up to 2 days late) swapped about 30 patterns in and out of "weak", which confirms they're noise rather than stable effects.
   - Slow planets (Jupiter outward) almost never reach the 12-occurrence minimum in crypto histories, which is the expected, honest outcome.
-  - The playbook re-runs as data grows. A pattern only counts once it clears the correction.
+  - The playbook re-runs every day. A pattern only counts once it clears the correction.
+  - Aspects and combinations of planets are not tested yet (a spec is coming).
 
 ### Signal research reference
 
@@ -238,4 +252,4 @@ Notes from researching how professional quant systems structure this, so we buil
 - **Journal fields**, to settle when `journal/` is built:
   - Is `JournalEntry.outcome_pnl` a percent return? The UI assumes it is.
   - The API's journal rows add `counterfactual_pnl`: what a skipped suggestion would have returned.
-- **Playbook schedule**: `scripts/build_playbook.py` runs on its own, daily or weekly, not inside the hourly runner. How it gets scheduled on the eventual host goes with the hosting decision.
+- **Hosting for the schedule**: the daily 00:30 UTC analysis only happens while the runner is running, so it goes with the runner's hosting decision above.
