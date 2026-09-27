@@ -1,7 +1,8 @@
 # Orbit terminal mockup
 
 A single-file, clickable mockup of the planned web UI. It exists to lock the
-look and the interaction model before the real frontend in `web/` is built.
+look and the interaction model. The real app is the React project in `web/`
+(see `web/README.md`); keep this file as the visual reference.
 Open `index.html` in a browser. It needs no server and no build step.
 
 Everything on screen is generated sample data, seeded so it looks the same on

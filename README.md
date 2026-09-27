@@ -25,6 +25,7 @@ orbit/
     alerts/          # Telegram/console notifier
     config/          # settings (assets, timeframe, secrets via .env)
     core/            # shared types used everywhere (Candle, Signal, Trade, ...)
+  web/               # React trading terminal (see web/README.md)
   tests/             # mirrors src/orbit structure
   scripts/           # one-off manual scripts
   data/              # local cache of downloaded candles (gitignored)
@@ -51,6 +52,14 @@ uv run pytest -q
 ```
 
 That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
+
+The web terminal lives in `web/` and runs on mock data until the API is ready:
+
+```bash
+cd web && npm install && npm run dev
+```
+
+See [`web/README.md`](web/README.md) for the screens and the API contract it expects from the backend.
 
 Design principles to keep in mind while contributing (see the doc for the full reasoning):
 - One strategy at a time — don't build a plugin system for hypothetical future strategies.
