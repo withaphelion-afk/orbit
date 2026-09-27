@@ -25,12 +25,15 @@ orbit/
     alerts/          # Telegram/console notifier
     config/          # settings (assets, timeframe, secrets via .env)
     core/            # shared types used everywhere (Candle, Signal, Trade, ...)
+  web/               # React trading terminal (see web/README.md)
+    src/api/         # data layer: types mirrored from core/types.py, mock + HTTP sources
+    src/panels/      # one screen per terminal function (chart, watchlist, suggestions, ...)
   tests/             # mirrors src/orbit structure
   scripts/           # one-off manual scripts
   data/              # local cache of downloaded candles (gitignored)
 ```
 
-Most modules are still empty stubs — see Status below for what's actually built.
+`strategy/`, `backtest/`, `journal/` and `alerts/` are still empty stubs — see Status below for what's actually built.
 
 ## Getting started
 
@@ -43,6 +46,23 @@ uv run pytest -q
 
 That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
 
+### Web terminal
+
+The UI is a separate React app in `web/`, and it needs Node 20.19+ or 22.12+:
+
+```bash
+cd web
+npm install
+npm run dev      # http://localhost:5173
+npm test         # unit tests
+```
+
+It opens on the monitor screen: a chart on the left and the watchlist on the right. Press `F1` for every command and key.
+
+- **Chart:** the LIVE mode shows real market data from TradingView's embedded chart. The ORBIT mode draws Orbit's own candles with signals, transits and suggestion levels.
+- **Everything else** (watchlist prices, suggestions, journal, drift and system status) is built-in sample data. A **MOCK DATA** badge shows while that's the case.
+- **Switching to real data:** the backend now serves the API contract in [`web/README.md`](web/README.md) — run it (see "Running the web API" below) and set `VITE_ORBIT_API=http` in `web/.env.local`.
+
 ## For contributors (including other Claude sessions)
 
 Read in this order before starting work:
@@ -50,11 +70,13 @@ Read in this order before starting work:
 1. **This README** — what the project is, how it's laid out, and the full plan below.
 2. **`git log`** — recent commits explain what's actually been built vs. planned.
 3. **`src/orbit/core/types.py`** — the shared vocabulary (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`) every module is built around.
+4. **`web/README.md`** — if you're touching the UI or building the API it reads from.
 
 Design principles to keep in mind while contributing:
 - One strategy at a time — don't build a plugin system for hypothetical future strategies.
 - Config lives in `config/settings.py`, not hardcoded in modules.
 - Keep modules independently testable: pure functions where possible (`data/` returns candles, `features/` turns candles into signals, `strategy/` turns signals into trade suggestions).
+- `web/src/api/types.ts` mirrors `core/types.py` field for field. When you change a core type, change it there too.
 
 This README is the single source of truth for planning — update it in place when a phase's status changes, instead of writing the plan elsewhere.
 
@@ -71,7 +93,14 @@ This README is the single source of truth for planning — update it in place wh
 - `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
 - `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
 - `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process — done, verified against real data end to end.
-- `api/` — the web API the React frontend talks to (`api/app.py`, FastAPI). Serves real data for quotes, candles, signals, astro transit stats (including actual historical BTC forward returns after past transits), and system status; honestly returns empty/neutral for suggestions, journal, and drift since the strategy layer doesn't exist yet — done, verified against a live server (including the WebSocket tick feed).
+- `web/` — the React trading terminal. Command line with a Ctrl+K palette and F-key screens:
+  - MON: chart and watchlist
+  - GP: live TradingView chart, or Orbit's own chart with overlays
+  - SUGG: suggestion queue with take/skip/modify
+  - JRNL, DRIFT, ASTRO, SYS and HELP
+
+  Runs on built-in sample data by default; a real backend now exists (see below) — set `VITE_ORBIT_API=http` to switch.
+- `api/` — the web API the frontend talks to (`api/app.py`, FastAPI). Serves real data for quotes, candles, signals, astro transit stats (including actual historical BTC forward returns after past transits), and system status; honestly returns empty/neutral for suggestions, journal, and drift since the strategy layer doesn't exist yet — done, verified against a live server (including the WebSocket tick feed).
 - Per-asset entry scoring, the actual strategy rules, backtesting, and the journal — not started yet.
 
 ### Running the 24/7 runner
@@ -115,6 +144,7 @@ A shared *regime gate* computed from BTC (and ETH) decides whether the environme
 | Backtesting | Walk-forward validated backtests before anything goes live |
 | 24/7 runner | Always-on scheduler that re-evaluates the strategy on an interval |
 | Alerting | Pushes trade suggestions with reasoning (Telegram/dashboard) — no execution yet |
+| Web terminal | Keyboard-first dashboard (`web/`) to review suggestions with their reasoning and log take/skip/modify decisions to the journal |
 | Feedback loop | Trade journal of every suggestion + decision + outcome, used to periodically reweight the scorecard |
 
 ### Astro-transit research track
@@ -146,9 +176,13 @@ Notes from researching how professional quant systems structure this, so we buil
 | 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Loop + logging built; alerting not started; not yet deployed to run unattended |
 | 6. Feedback loop | Review cadence to correct/reweight the scorecard | Not started |
 | 7. Auto-execution | Enabled later, once confidence is earned | Not started |
+| Web terminal | Dashboard for suggestions, decisions, journal, drift and runner status | UI built; backend API built and serving real quotes/candles/signals/astro/system data; suggestions/journal/drift still empty pending the strategy layer |
 
 ### Open decisions
 
 - **Project name**: working title **Orbit** (used for the astro-transit + always-on-monitoring theme).
 - **Strategy definition**: exact assets/timeframe/entry-exit rules for the single strategy — not yet locked; deliberately deferred while the data layer gets built out first.
 - **Hosting for the 24/7 runner**: VPS vs home server — not yet decided.
+- **API for the web terminal**: the backend needs to serve the REST + WebSocket endpoints listed in `web/README.md`. Two points to agree while building it:
+  - Is `JournalEntry.outcome_pnl` a percent return? The UI assumes it is.
+  - The journal adds a `counterfactual_pnl` field: what a skipped suggestion would have returned.
