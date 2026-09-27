@@ -25,6 +25,7 @@ orbit/
     alerts/          # Telegram/console notifier
     config/          # settings (assets, timeframe, secrets via .env)
     core/            # shared types used everywhere (Candle, Signal, Trade, ...)
+  web/               # React trading terminal (see web/README.md)
   tests/             # mirrors src/orbit structure
   scripts/           # one-off manual scripts
   data/              # local cache of downloaded candles (gitignored)
@@ -42,6 +43,14 @@ uv run pytest -q
 ```
 
 That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
+
+The web terminal lives in `web/` and runs on mock data until the API is ready:
+
+```bash
+cd web && npm install && npm run dev
+```
+
+See [`web/README.md`](web/README.md) for the screens and the API contract it expects from the backend.
 
 ## For contributors (including other Claude sessions)
 
@@ -71,6 +80,7 @@ This README is the single source of truth for planning — update it in place wh
 - `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
 - `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
 - `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process — done, verified against real data end to end.
+- `web/` — the React trading terminal (chart with TradingView live data, watchlist, suggestion queue, journal, drift, astro, system) — scaffolded, running on mock data until the backend serves the API contract in `web/README.md`.
 - Per-asset entry scoring, the actual strategy rules, backtesting, and the journal — not started yet.
 
 ### Running the 24/7 runner
