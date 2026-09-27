@@ -1,5 +1,7 @@
-import { useAstro, useCandles, useSignals, useSuggestions } from '../api/hooks'
-import { Seg } from '../components/bits'
+import { useMemo } from 'react'
+import { useCandles, useComponents, useSignals, useSuggestions, useTransits } from '../api/hooks'
+import type { TransitView } from '../api/types'
+import { QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSETS, ASSET_META, TV_INTERVALS } from '../config'
 import { useTerminal, type ChartMode } from '../state/store'
@@ -10,6 +12,7 @@ const MODES: { label: string; value: ChartMode }[] = [
   { label: 'LIVE', value: 'LIVE' },
   { label: 'ORBIT', value: 'ORBIT' },
 ]
+const SLOW = new Set(['JUPITER', 'SATURN', 'URANUS', 'NEPTUNE', 'PLUTO'])
 
 export function ChartPanel({ hidden }: { hidden: boolean }) {
   const asset = useTerminal((s) => s.asset)
@@ -24,7 +27,7 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
     <Panel
       code="GP"
       hidden={hidden}
-      title={`${meta.name} · ${mode === 'LIVE' ? 'TradingView live' : 'Orbit daily'}`}
+      title={`${meta.name} · ${mode === 'LIVE' ? 'TradingView live' : 'Orbit daily, full history'}`}
       meta={
         <>
           <Seg label="Asset" value={asset} onChange={setAsset} options={ASSETS.map((a) => ({ label: ASSET_META[a].label, value: a }))} />
@@ -51,19 +54,32 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
   )
 }
 
+/** Which transits to mark: every station, slow-planet ingresses, and anything the
+ * playbook rates weak or better for this asset. Fast ingresses alone would
+ * bury the chart (~40 a year). */
+function markable(v: TransitView, asset: string) {
+  const e = v.event
+  if (e.planet === 'MOON') return false
+  return e.event_type !== 'INGRESS' || SLOW.has(e.planet) || v.notable.some((n) => n.asset === asset)
+}
+
 function OrbitChartData() {
   const asset = useTerminal((s) => s.asset)
   const candles = useCandles(asset)
   const signals = useSignals(asset)
-  const astro = useAstro()
-  const suggestions = useSuggestions()
-  if (candles.isError) return <p className="load-err">Couldn't load candles: {String(candles.error)}</p>
+  const first = candles.data?.[0]?.timestamp
+  const transits = useTransits(first, new Date().toISOString())
+  const { components } = useComponents()
+  const suggestions = useSuggestions(!!components?.strategy)
+  const marks = useMemo(() => (transits.data ?? []).filter((v) => markable(v, asset)), [transits.data, asset])
+
+  if (!candles.data) return <QueryState isPending={candles.isPending} error={candles.error} what="candles" />
   return (
     <OrbitChart
       asset={asset}
-      candles={candles.data ?? []}
+      candles={candles.data}
       signals={signals.data ?? []}
-      transits={astro.data ?? []}
+      transits={marks}
       pending={suggestions.data?.find((s) => s.suggestion.asset === asset)}
     />
   )

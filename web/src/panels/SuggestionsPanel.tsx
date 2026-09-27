@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useDecide, useSuggestions } from '../api/hooks'
+import { useComponents, useDecide, useSuggestions } from '../api/hooks'
 import type { Decision, SuggestionView } from '../api/types'
-import { Empty } from '../components/bits'
+import { Empty, NotBuilt, QueryState } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
 import { parsePrice, validateLevels } from '../lib/decision'
@@ -15,7 +15,9 @@ const ACTIONS: { decision: Decision; key: string; label: string; cls: string }[]
 ]
 
 export function SuggestionsPanel({ hidden }: { hidden: boolean }) {
-  const { data, isError, error } = useSuggestions()
+  const { components, error: sysError, isPending: sysPending } = useComponents()
+  const built = !!components?.strategy
+  const { data, isError, error } = useSuggestions(built)
   const list = data ?? []
   const [sel, setSel] = useState(0)
   const [drawer, setDrawer] = useState<Decision | null>(null)
@@ -66,8 +68,17 @@ export function SuggestionsPanel({ hidden }: { hidden: boolean }) {
         </>
       }
     >
-      {isError ? (
-        <p className="load-err">Couldn't load suggestions: {String(error)}</p>
+      {!components ? (
+        <QueryState isPending={sysPending} error={sysError} what="system status" />
+      ) : !built ? (
+        <NotBuilt layer="STRATEGY">
+          <span>
+            Nothing produces trade suggestions yet: the strategy layer (<code>src/orbit/strategy/</code>) is still empty. When it exists, each
+            suggestion lands here with the signals behind it, for you to take, skip or modify.
+          </span>
+        </NotBuilt>
+      ) : isError ? (
+        <QueryState isPending={false} error={error} what="suggestions" />
       ) : !current ? (
         <Empty title="QUEUE CLEAR">
           <span>No suggestions are waiting. The runner evaluates again at 00:00 UTC.</span>

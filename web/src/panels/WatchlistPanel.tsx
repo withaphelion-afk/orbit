@@ -1,18 +1,20 @@
-import { useDrift, useQuotes, useSuggestions } from '../api/hooks'
-import type { Quote, SuggestionView } from '../api/types'
-import { Flash, Pill, Sparkline } from '../components/bits'
+import { useQuotes, useRegime, useSky } from '../api/hooks'
+import type { Quote } from '../api/types'
+import { Flash, Pill, QueryState, Sparkline } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
-import { price, signed, tone } from '../lib/format'
+import { day, daysFrom, price, signed, tone, transitLabel } from '../lib/format'
 import { useTerminal } from '../state/store'
 
 const REGIME_TONE = { BULL: 'up', BEAR: 'down', CHOPPY: 'mid' } as const
 
-function Row({ q, pending }: { q: Quote; pending?: SuggestionView }) {
+function Row({ q }: { q: Quote }) {
   const active = useTerminal((s) => s.asset === q.asset)
   const setAsset = useTerminal((s) => s.setAsset)
   const live = useTerminal((s) => s.prices[q.asset])
+  const liveSource = useTerminal((s) => s.priceSource[q.asset])
   const last = live ?? q.last
+  const source = liveSource ?? q.source
   const hi = Math.max(q.day_high, last)
   const lo = Math.min(q.day_low, last)
   const ch = last - q.prev_close
@@ -20,15 +22,19 @@ function Row({ q, pending }: { q: Quote; pending?: SuggestionView }) {
   const pos = ((last - lo) / (hi - lo || 1)) * 100
 
   return (
-    <button className={`tk ${active ? 'on' : ''}`} onClick={() => setAsset(q.asset)} title={meta.pair} aria-pressed={active}>
+    <button className={`tk ${active ? 'on' : ''}`} onClick={() => setAsset(q.asset)} title={`${meta.pair} · ${source === 'STORED' ? 'last stored close' : source === 'DELAYED' ? 'delayed quote' : 'live'}`} aria-pressed={active}>
       <span className="id">
         <span className="sym">{meta.label}</span>
         <span className="nm">{meta.name}</span>
+        {source !== 'LIVE' && <span className="src">{source}</span>}
       </span>
       <Flash value={last} className="px">
         {price(q.asset, last)}
       </Flash>
-      <span className={`rgl ${REGIME_TONE[q.regime]}`}>{q.regime}</span>
+      <span className={`rgl ${q.regime ? REGIME_TONE[q.regime] : 'dim'}`} title={q.regime_scope === 'SHARED' ? 'Shared BTC/ETH regime gate' : "Silver's own trend (same 50/200-day rule)"}>
+        {q.regime ?? 'NO READING'}
+        <span className="scope">{q.regime_scope === 'SHARED' ? ' · GATE' : ' · OWN TREND'}</span>
+      </span>
       <span className={`ch ${tone(ch)}`}>
         {signed(ch, meta.dp)}&nbsp;&nbsp;{signed((ch / q.prev_close) * 100)}%
       </span>
@@ -40,22 +46,20 @@ function Row({ q, pending }: { q: Quote; pending?: SuggestionView }) {
         </span>
         <span>H {price(q.asset, hi)}</span>
       </span>
-      {pending && (
-        <span className="pend">
-          PENDING <b className={pending.suggestion.direction === 'LONG' ? 'up' : 'down'}>{pending.suggestion.direction}</b> · CONF{' '}
-          {pending.suggestion.confidence.toFixed(2)} · R:R {pending.risk_reward.toFixed(1)}
-        </span>
-      )}
     </button>
   )
 }
 
 export function WatchlistPanel({ hidden }: { hidden: boolean }) {
   const quotes = useQuotes()
-  const suggestions = useSuggestions()
-  const drift = useDrift()
+  const regime = useRegime()
+  const sky = useSky()
   const setView = useTerminal((s) => s.setView)
-  const pending = suggestions.data ?? []
+  const gate = regime.data?.find((r) => r.scope === 'SHARED')
+  const next = (sky.data ?? [])
+    .map((p) => p.next_event)
+    .filter((e) => e !== null)
+    .sort((a, b) => a.date.localeCompare(b.date))[0]
 
   return (
     <Panel code="WL" title="Watchlist" hidden={hidden} meta={<span className="dim">1–4 SELECT</span>}>
@@ -65,27 +69,26 @@ export function WatchlistPanel({ hidden }: { hidden: boolean }) {
           <span className="lbl">Last · day</span>
         </div>
         <nav className="wl" aria-label="Watchlist">
-          {quotes.isError && <p className="load-err">Couldn't load quotes: {String(quotes.error)}</p>}
-          {quotes.data?.map((q) => (
-            <Row key={q.asset} q={q} pending={pending.find((p) => p.suggestion.asset === q.asset)} />
-          ))}
+          <QueryState isPending={quotes.isPending} error={quotes.error} what="quotes" />
+          {quotes.data?.map((q) => <Row key={q.asset} q={q} />)}
         </nav>
         <div className="glance">
-          <button onClick={() => setView('SUGG')}>
-            <span className="lbl">
-              Queue <kbd>F4</kbd>
+          <button onClick={() => setView('SYS')} title="Shared BTC/ETH regime gate">
+            <span className="lbl">Regime gate</span>
+            <span className="v">
+              {gate?.value ? <Pill tone={gate.value === 'BULL' ? 'ok' : gate.value === 'BEAR' ? 'drift' : 'watch'}>{gate.value}</Pill> : '—'}
+              {gate?.since && <span className="since">since {day(gate.since)}</span>}
             </span>
-            <span className="v">{pending.length} pending</span>
           </button>
-          <button onClick={() => setView('DRIFT')}>
+          <button onClick={() => setView('ASTRO')} title="Next transit (ASTRO, F7)">
             <span className="lbl">
-              Drift <kbd>F6</kbd>
+              Next transit <kbd>F7</kbd>
             </span>
             <span className="v">
-              {drift.data ? (
+              {next ? (
                 <>
-                  <Pill tone={drift.data.status === 'OK' ? 'ok' : drift.data.status === 'WATCH' ? 'watch' : 'drift'}>{drift.data.status}</Pill>
-                  {signed(drift.data.z_score, 1)}σ
+                  <span className="astro-t">{transitLabel(next)}</span>
+                  <span className="since">{daysFrom(next.date)}</span>
                 </>
               ) : (
                 '—'

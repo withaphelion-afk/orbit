@@ -16,8 +16,10 @@ This project doubles as a learning project. Every module is built to be understa
 ```
 orbit/
   src/orbit/
-    data/          # fetch + store price & ephemeris data
+    data/          # fetch + store price & ephemeris data (stitched full histories)
     features/      # raw data -> signals (indicators, regime, astro transits)
+    analysis/      # transit research: events, outcomes, significance, the playbook
+    api/           # HTTP + WebSocket API the web terminal reads
     strategy/       # the one active strategy: entry/exit/risk rules
     backtest/       # historical simulation + walk-forward validation
     journal/        # trade log schema + read/write
@@ -26,11 +28,11 @@ orbit/
     config/          # settings (assets, timeframe, secrets via .env)
     core/            # shared types used everywhere (Candle, Signal, Trade, ...)
   web/               # React trading terminal (see web/README.md)
-    src/api/         # data layer: types mirrored from core/types.py, mock + HTTP sources
+    src/api/         # API client; types mirrored from core/types.py and api/schemas.py
     src/panels/      # one screen per terminal function (chart, watchlist, suggestions, ...)
   tests/             # mirrors src/orbit structure
   scripts/           # one-off manual scripts
-  data/              # local cache of downloaded candles (gitignored)
+  data/              # local price history, ephemeris, features, playbook output (gitignored)
 ```
 
 `strategy/`, `backtest/`, `journal/` and `alerts/` are still empty stubs — see Status below for what's actually built.
@@ -46,9 +48,22 @@ uv run pytest -q
 
 That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
 
+Then build the local data. None of these steps needs an API key:
+
+```bash
+uv run python scripts/fetch_data.py        # full price history; the first run takes ~30s, later runs fetch only new bars
+uv run python scripts/fetch_ephemeris.py   # planetary positions, 60 years back and 2 ahead
+uv run python scripts/compute_features.py  # technical, regime and astro features
+uv run python scripts/build_playbook.py    # transit playbook (~25s)
+uv run python scripts/placebo_check.py     # optional sanity check of the playbook method (~2 min)
+uv run python -m orbit.api                 # API for the web terminal, on http://127.0.0.1:8000
+```
+
+**Note for Windows machines with Smart App Control / Application Control:** it blocks pandas' compiled files, so nothing in `src/` imports pandas; the maths uses numpy, which loads fine.
+
 ### Web terminal
 
-The UI is a separate React app in `web/`, and it needs Node 20.19+ or 22.12+:
+The UI is a separate React app in `web/`, and it needs Node 20.19+ or 22.12+. It reads everything from the API above, so start that first:
 
 ```bash
 cd web
@@ -59,9 +74,11 @@ npm test         # unit tests
 
 It opens on the monitor screen: a chart on the left and the watchlist on the right. Press `F1` for every command and key.
 
-- **Chart:** the LIVE mode shows real market data from TradingView's embedded chart. The ORBIT mode draws Orbit's own candles with signals, transits and suggestion levels.
-- **Everything else** (watchlist prices, suggestions, journal, drift and system status) is built-in sample data. A **MOCK DATA** badge shows while that's the case.
-- **Switching to real data:** once the backend serves the API contract in [`web/README.md`](web/README.md), set `VITE_ORBIT_API=http` in `web/.env.local`.
+- **Everything shown is real:** live prices from Binance (silver delayed, from Yahoo), the stored histories, the regime gate, planet positions, the transit playbook and runner status. There is no mock data.
+- **Chart:** LIVE mode is TradingView's embedded chart with their own data. ORBIT mode draws the full stored history with regime flips and transit markers.
+- **Layers not built yet** (strategy, journal, backtest) show an explicit "not built yet" screen. They fill in by themselves once the API reports those layers as built.
+
+See [`web/README.md`](web/README.md) for the screens and the API contract.
 
 ## For contributors (including other Claude sessions)
 
@@ -83,23 +100,30 @@ This README is the single source of truth for planning — update it in place wh
 ## Status
 
 - `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`, `EphemerisSnapshot`, `FeatureRecord`) — done.
-- `data/binance.py` + `data/silver.py` — fetch BTC/ETH/SOL and silver daily candles from public APIs (no keys needed) — done. Run with `uv run python scripts/fetch_data.py`.
-- `data/ephemeris.py` — daily planetary positions (zodiac sign + retrograde) via Skyfield, 60-year vectorized backfill — done. Run with `uv run python scripts/fetch_ephemeris.py`.
+- `data/history.py` — full daily history per asset, stitched across venues and then updated incrementally — done.
+  - BTC: Bitstamp from 2013, then Binance from Aug 2017.
+  - ETH: Coinbase from May 2016, then Binance from Aug 2017.
+  - SOL: Binance from Aug 2020.
+  - Silver: Yahoo futures from Aug 2000.
+  - Before joining two venues it checks that their closes agree over the overlap (currently a median gap of about 0.45%) and refuses if they don't. Every bar records its source, and each build writes `data/history_report.json`.
+  - Fetchers live in `data/binance.py`, `bitstamp.py`, `coinbase.py` and `silver.py`, sharing a retrying HTTP helper. Run with `uv run python scripts/fetch_data.py`.
+- `data/ephemeris.py` — daily planetary positions (zodiac sign + retrograde) via Skyfield, 60 years back and 2 years ahead, dated at UTC midnight like the prices — done. Run with `uv run python scripts/fetch_ephemeris.py`.
 - `data/storage.py` — save/load candles and ephemeris snapshots as CSV under `data/` — done.
 - `features/store.py` — the feature store: append-only CSV per asset, long format (date, name, value) — done.
-- `features/technical.py` — daily return, close vs. 50/200-day SMA, 20-day volatility — done.
+- `features/technical.py` — daily return, close vs. 50/200-day SMA, 20-day volatility, computed as numpy rolling windows so full histories stay fast — done.
 - `features/regime.py` — the regime gate (BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY) plus `compute_regime_series` to log its full history, not just a live reading — done.
 - `features/astro.py` — encodes ephemeris sign/retrograde as numeric features per tracked asset — done.
 - `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
 - `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
-- `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process — done, verified against real data end to end.
-- `web/` — the React trading terminal — built, running on sample data. It has a command line with a Ctrl+K palette and F-key screens:
+- `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process. It writes a heartbeat (`data/runner_status.json`) that the API reports — done, verified against real data end to end.
+- `analysis/` — the transit playbook: sign ingresses and retrograde stations, outcomes over several forward horizons, significance tests, confidence labels, exception context and a chop track — done. See "Astro-transit research track" below for method and findings. Run with `uv run python scripts/build_playbook.py`.
+- `api/` — FastAPI server the web terminal reads: stored data, the playbook, runner status, and live prices over `/ws` — done. Run with `uv run python -m orbit.api`.
+- `web/` — the React trading terminal, on real data only — done. It has a command line with a Ctrl+K palette and F-key screens:
   - MON: chart and watchlist
-  - GP: live TradingView chart, or Orbit's own chart with overlays
-  - SUGG: suggestion queue with take/skip/modify
-  - JRNL, DRIFT, ASTRO, SYS and HELP
-
-  Still needed: the backend API it reads from (endpoints listed in `web/README.md`). Nothing serves it yet.
+  - GP: live TradingView chart, or Orbit's full-history chart with regime and transit markers
+  - ASTRO: current sky, transit calendar, playbook and chop track
+  - SYS: runner, layers, feeds, log and config
+  - SUGG, JRNL and DRIFT are ready but show "not built yet" until those layers exist
 - Per-asset entry scoring, the actual strategy rules, backtesting, and the journal — not started yet.
 
 ### Running the 24/7 runner
@@ -137,7 +161,36 @@ Treated as one testable input among others — back-tested with the same rigor a
 - **Ephemeris source**: Skyfield (pure Python, no compiler needed) — exact planetary positions/transits for any date, free, precise. (Originally planned as Swiss Ephemeris via `pyswisseph`, but that needs a C++ compiler not available on this machine.)
 - **Event tagging**: a table of historical transit events (sign changes, retrogrades, conjunctions/aspects) mapped to date ranges, joined against price history to compute frequency, average move and win rate after each event type.
 - **Significance testing**: long-cycle transits (e.g. Jupiter ~12 years) give very few historical samples — explicitly test whether any correlation is statistically real or noise before trusting it.
-- **Status**: ephemeris data pipeline built (60 years of daily positions for all 10 planets, verified against known real transit dates). Event tagging + price join not started yet.
+- **Status**: the transit playbook is built (`analysis/`, `scripts/build_playbook.py`).
+- **Events**: sign ingresses (first entries tested; backward ingresses and re-entries recorded but not double-counted) and retrograde stations (the retrograde flag with one- and two-day flickers removed). Aspects and conjunctions are deferred.
+- **Outcomes**: forward returns over horizons that depend on planet speed:
+  - Moon: 1, 3 and 5 bars
+  - Sun to Mars: 1, 5, 10 and 20 bars
+  - Jupiter outward: 20, 40 and 60 bars
+
+  Each is labelled against the asset's *own* history: BIG_UP or BIG_DOWN for its top or bottom 15% of returns at that horizon; SIDEWAYS for a small net move (measured against ATR) while the market still moved normally; NEUTRAL otherwise.
+- **Significance**:
+  - Each pattern's hit rate is compared with the whole event calendar circularly shifted against the prices, over every shift at least 30 bars away (computed at once via FFT). This keeps both the events' spacing and the market's trends intact.
+  - Where the shifts run out of resolution, a negative-binomial tail fitted to the shifted results takes over.
+  - An exact check against uniformly random dates (hypergeometric) is reported alongside, not corrected.
+  - Benjamini-Hochberg FDR corrects all of an asset's pattern tests as one family.
+  - Patterns with fewer than 12 occurrences are never tested.
+  - The hypothesis list is written before any test runs, and every run is logged.
+- **Labels**: strong (q ≤ 0.05, 25+ occurrences, 1.5× the base rate), moderate (q ≤ 0.10), weak (nominal p < 0.05 only), none, insufficient_data.
+- **Exceptions**: every occurrence that went against its pattern's dominant outcome is listed with its context:
+  - the regime at the time (the shared gate for crypto, silver's own trend)
+  - the volatility percentile
+  - other transits in the same window, and any that lean the opposite way
+- **Chop track**: separately, which transit *states* (e.g. "Mercury retrograde", "Saturn in Pisces") coincide with sideways markets. The sample size counted is distinct episodes, not days.
+- **Validation**: `scripts/placebo_check.py` moves every transit date by arbitrary offsets and re-runs everything; any moderate or strong result on those fake calendars is a false discovery.
+  - The first version produced false discoveries in 6 of 32 placebo runs, caused by separate correction families and a normal-curve tail. Both were fixed.
+  - It now produces 0 of 32.
+  - A planted-effect unit test confirms the method still catches a real effect.
+- **Findings so far (Sept 2026)**: 2,241 tests across four assets.
+  - **No transit pattern survives multiple-testing correction for any asset.** That is 0 strong and 0 moderate.
+  - Some patterns are "weak": nominally significant, but at a rate consistent with chance (about 3–6% of tests fall below p < 0.05). They're worth watching, not trading.
+  - Slow planets (Jupiter outward) almost never reach the 12-occurrence minimum in crypto histories, which is the expected, honest outcome.
+  - The playbook re-runs as data grows. A pattern only counts once it clears the correction.
 
 ### Signal research reference
 
@@ -153,19 +206,20 @@ Notes from researching how professional quant systems structure this, so we buil
 | Phase | Description | Status |
 | --- | --- | --- |
 | 1. Define the strategy | Assets, timeframe, entry/exit rules, risk rules on paper | Not started |
-| 2. Data pipeline | Price data + ephemeris data, stored locally | Done |
-| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Feature store built (technical + regime + astro); backtest engine itself not started |
+| 2. Data pipeline | Price data + ephemeris data, stored locally | Done: full stitched histories, incremental updates, ephemeris 2 years ahead |
+| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Astro factors tested (transit playbook, placebo-checked); backtest engine itself not started |
 | 4. Trade journal + scorecard | Logging schema for every signal and decision | Not started |
-| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Loop + logging built; alerting not started; not yet deployed to run unattended |
+| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Loop, logging and heartbeat built; alerting not started; not yet deployed to run unattended |
 | 6. Feedback loop | Review cadence to correct/reweight the scorecard | Not started |
 | 7. Auto-execution | Enabled later, once confidence is earned | Not started |
-| Web terminal | Dashboard for suggestions, decisions, journal, drift and runner status | UI built on sample data; waiting on a backend API to serve real data |
+| Web terminal | Dashboard for suggestions, decisions, journal, drift and runner status | Built on real data via `api/`; suggestion, journal and drift screens wait on their layers |
 
 ### Open decisions
 
 - **Project name**: working title **Orbit** (used for the astro-transit + always-on-monitoring theme).
 - **Strategy definition**: exact assets/timeframe/entry-exit rules for the single strategy — not yet locked; deliberately deferred while the data layer gets built out first.
 - **Hosting for the 24/7 runner**: VPS vs home server — not yet decided.
-- **API for the web terminal**: the backend needs to serve the REST + WebSocket endpoints listed in `web/README.md`. Two points to agree while building it:
+- **Journal fields**, to settle when `journal/` is built:
   - Is `JournalEntry.outcome_pnl` a percent return? The UI assumes it is.
-  - The journal adds a `counterfactual_pnl` field: what a skipped suggestion would have returned.
+  - The API's journal rows add `counterfactual_pnl`: what a skipped suggestion would have returned.
+- **Playbook schedule**: `scripts/build_playbook.py` runs on its own, daily or weekly, not inside the hourly runner. How it gets scheduled on the eventual host goes with the hosting decision.

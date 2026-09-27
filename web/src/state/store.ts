@@ -17,6 +17,7 @@ interface TerminalState {
   chartMode: ChartMode
   tvInterval: TvInterval
   prices: Partial<Record<Asset, number>>
+  priceSource: Partial<Record<Asset, 'LIVE' | 'DELAYED'>>
   lastTickAt: number | null
   feedConnected: boolean
   paletteOpen: boolean
@@ -26,7 +27,7 @@ interface TerminalState {
   setAsset: (a: Asset) => void
   setChartMode: (m: ChartMode) => void
   setTvInterval: (i: TvInterval) => void
-  applyTick: (a: Asset, price: number) => void
+  applyTick: (a: Asset, price: number, source: 'LIVE' | 'DELAYED') => void
   setFeedConnected: (ok: boolean) => void
   setPaletteOpen: (open: boolean) => void
   notify: (text: string, error?: boolean) => void
@@ -53,6 +54,7 @@ export const useTerminal = create<TerminalState>((set) => ({
   chartMode: savedMode === 'ORBIT' ? 'ORBIT' : 'LIVE',
   tvInterval: savedInterval ?? 'D',
   prices: {},
+  priceSource: {},
   lastTickAt: null,
   feedConnected: false,
   paletteOpen: false,
@@ -71,7 +73,8 @@ export const useTerminal = create<TerminalState>((set) => ({
     remember('tvInterval', tvInterval)
     set({ tvInterval })
   },
-  applyTick: (a, price) => set((s) => ({ prices: { ...s.prices, [a]: price }, lastTickAt: Date.now() })),
+  applyTick: (a, price, source) =>
+    set((s) => ({ prices: { ...s.prices, [a]: price }, priceSource: { ...s.priceSource, [a]: source }, lastTickAt: Date.now() })),
   setFeedConnected: (feedConnected) => set({ feedConnected }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   notify: (text, error = false) => set({ toast: { id: Date.now(), text, error } }),
