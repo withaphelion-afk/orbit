@@ -14,10 +14,14 @@ the test period) and scored only on the period it hasn't seen. Scores are
 out-of-sample log-loss, Brier score and AUC, and "skill" = improvement in
 log-loss over simply predicting the historical base rate.
 
-The Vedic features only earn credit if TECH+VEDIC beats TECH *and* beats every
-TECH+CONTROL run: the control has exactly the same features with the same
-persistence and rhythm, just misaligned with prices, so any "skill" it shows
-is what fitting hundreds of features buys by chance.
+The Vedic features only earn credit ("adds skill") if TECH+VEDIC beats TECH,
+beats every TECH+CONTROL run, beats simply guessing the base rate (skill > 0),
+and does better than TECH in most test years. The control has exactly the same
+features with the same persistence and rhythm, just misaligned with prices, so
+any "skill" it shows is what fitting hundreds of features buys by chance.
+
+Six targets are checked per asset (24 across the four), so one or two can pass
+by chance alone; a pass is something to watch across later runs, not proof.
 
 The fitted final model (all data) also gives today's probabilities.
 """
@@ -232,7 +236,8 @@ def evaluate(asset: Asset, series: PriceSeries, states: States) -> dict:
             years_better = sum(1 for yr in yearly_v if yearly_v[yr] > yearly_t[yr])
             beats_controls = bool(control_gains) and vedic_gain > max(control_gains)
             verdict = (
-                "adds skill" if vedic_gain > 0 and beats_controls and years_better > len(yearly_v) / 2
+                "adds skill"
+                if vedic_gain > 0 and beats_controls and scores["TECH+VEDIC"]["skill"] > 0 and years_better > len(yearly_v) / 2
                 else "no added skill" if vedic_gain <= 0 or not beats_controls
                 else "unclear"
             )
@@ -277,8 +282,10 @@ def evaluate(asset: Asset, series: PriceSeries, states: States) -> dict:
         "results": results,
         "forecast": forecast,
         "summary": (
-            f"Vedic features add out-of-sample skill for {', '.join(added)}." if added
-            else "Vedic features add no out-of-sample skill beyond price alone for any target."
+            f"Vedic features add out-of-sample skill for {', '.join(added)} ({len(added)} of {len(results)} targets). "
+            "With this many targets checked, one or two can pass by chance: watch whether it holds on later runs."
+            if added
+            else f"Vedic features add no out-of-sample skill beyond price alone for any of the {len(results)} targets."
         ),
     }
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
