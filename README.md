@@ -32,15 +32,6 @@ orbit/
 
 Most modules are still empty stubs — see Status below for what's actually built.
 
-## Where to learn more (context for contributors, including other Claude sessions)
-
-Before doing any work here, read these in order:
-
-1. **This README** — what the project is and how it's laid out.
-2. **The shared project doc** — architecture, build phases, the astro-transit research track, and open decisions: [Orbit — Systematic Trading Strategy](https://claude.ai/code/artifact/d1aae7ea-a032-4196-992d-705ff5b70a37). This is the single source of truth for planning — check it before starting work and update it when a phase's status changes, instead of creating a new doc.
-3. **`git log`** — recent commits explain what's actually been built vs. planned.
-4. **`src/orbit/core/types.py`** — the shared vocabulary (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`) every module is built around.
-
 ## Getting started
 
 ```bash
@@ -52,17 +43,72 @@ uv run pytest -q
 
 That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
 
-Design principles to keep in mind while contributing (see the doc for the full reasoning):
+## For contributors (including other Claude sessions)
+
+Read in this order before starting work:
+
+1. **This README** — what the project is, how it's laid out, and the full plan below.
+2. **`git log`** — recent commits explain what's actually been built vs. planned.
+3. **`src/orbit/core/types.py`** — the shared vocabulary (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`) every module is built around.
+
+Design principles to keep in mind while contributing:
 - One strategy at a time — don't build a plugin system for hypothetical future strategies.
 - Config lives in `config/settings.py`, not hardcoded in modules.
 - Keep modules independently testable: pure functions where possible (`data/` returns candles, `features/` turns candles into signals, `strategy/` turns signals into trade suggestions).
 
+This README is the single source of truth for planning — update it in place when a phase's status changes, instead of writing the plan elsewhere.
+
 ## Status
 
-- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`) — done.
+- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`, `EphemerisSnapshot`) — done.
 - `data/binance.py` + `data/silver.py` — fetch BTC/ETH/SOL and silver daily candles from public APIs (no keys needed) — done. Run with `uv run python scripts/fetch_data.py`.
-- `data/storage.py` — save/load candles as CSV under `data/` — done.
-- `features/regime.py` — the regime gate: reads BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY — done. This gates whether per-asset entries are considered at all (see the doc's System architecture section for the reasoning).
+- `data/ephemeris.py` — daily planetary positions (zodiac sign + retrograde) via Skyfield, 60-year vectorized backfill — done. Run with `uv run python scripts/fetch_ephemeris.py`.
+- `data/storage.py` — save/load candles and ephemeris snapshots as CSV under `data/` — done.
+- `features/regime.py` — the regime gate: reads BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY — done. This gates whether per-asset entries are considered at all.
 - Per-asset entry scoring, the actual strategy rules, backtesting, the journal, and the 24/7 runner — not started yet.
 
-See the doc's Build Plan section for phase-level status.
+## Full plan
+
+### Strategy structure for crypto (BTC/ETH/SOL)
+
+A shared *regime gate* computed from BTC (and ETH) decides whether the environment favors longs, shorts, or no trade at all — this stops the system from fighting the macro trend. A *per-asset entry layer* sits on top, scoring each coin's own relative strength/setup for actual entry timing, so genuine divergence (e.g. SOL breaking out while BTC chops) still gets caught. Silver is fully separate — no crypto correlation logic applies to it. Position sizing must treat correlated crypto longs/shorts as one grouped exposure, not three independent bets.
+
+### System architecture
+
+| Layer | Purpose |
+| --- | --- |
+| Data layer | Pull OHLCV for BTC/ETH/SOL (exchange APIs) and silver (broker/vendor feed) + ephemeris data; store in a time-series DB |
+| Feature/signal engineering | Technical indicators, regime detection, plus astro-transit features |
+| Scoring engine | Rules-based scorecard first; ML model added later once enough logged trades exist |
+| Risk & portfolio management | Position sizing, exposure/correlation limits, stop-loss/target, drawdown circuit breaker |
+| Backtesting | Walk-forward validated backtests before anything goes live |
+| 24/7 runner | Always-on scheduler that re-evaluates the strategy on an interval |
+| Alerting | Pushes trade suggestions with reasoning (Telegram/dashboard) — no execution yet |
+| Feedback loop | Trade journal of every suggestion + decision + outcome, used to periodically reweight the scorecard |
+
+### Astro-transit research track
+
+Treated as one testable input among others — back-tested with the same rigor as technical signals, not taken on faith.
+
+- **Ephemeris source**: Skyfield (pure Python, no compiler needed) — exact planetary positions/transits for any date, free, precise. (Originally planned as Swiss Ephemeris via `pyswisseph`, but that needs a C++ compiler not available on this machine.)
+- **Event tagging**: a table of historical transit events (sign changes, retrogrades, conjunctions/aspects) mapped to date ranges, joined against price history to compute frequency, average move and win rate after each event type.
+- **Significance testing**: long-cycle transits (e.g. Jupiter ~12 years) give very few historical samples — explicitly test whether any correlation is statistically real or noise before trusting it.
+- **Status**: ephemeris data pipeline built (60 years of daily positions for all 10 planets, verified against known real transit dates). Event tagging + price join not started yet.
+
+### Build plan
+
+| Phase | Description | Status |
+| --- | --- | --- |
+| 1. Define the strategy | Assets, timeframe, entry/exit rules, risk rules on paper | Not started |
+| 2. Data pipeline | Price data + ephemeris data, stored locally | Done |
+| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Not started |
+| 4. Trade journal + scorecard | Logging schema for every signal and decision | Not started |
+| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Not started |
+| 6. Feedback loop | Review cadence to correct/reweight the scorecard | Not started |
+| 7. Auto-execution | Enabled later, once confidence is earned | Not started |
+
+### Open decisions
+
+- **Project name**: working title **Orbit** (used for the astro-transit + always-on-monitoring theme).
+- **Strategy definition**: exact assets/timeframe/entry-exit rules for the single strategy — not yet locked; deliberately deferred while the data layer gets built out first.
+- **Hosting for the 24/7 runner**: VPS vs home server — not yet decided.
