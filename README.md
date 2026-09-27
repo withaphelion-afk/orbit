@@ -4,6 +4,14 @@ A 24/7 systematic trading assistant for **BTC, ETH, SOL, and Silver**. It watche
 
 This project doubles as a learning project. Every module is built to be understandable, not just functional — comments and docs explain *why*, not just *what*.
 
+**Quick start on any machine (Windows, macOS, Linux):** install [uv](https://docs.astral.sh/uv/) and [Node 20.19+](https://nodejs.org), clone, then
+
+```bash
+python scripts/start_orbit.py     # or double-click start_orbit.cmd (Windows) / run ./start_orbit.sh (macOS, Linux)
+```
+
+It sets up the environment, builds the web terminal, starts the API and the 24/7 runner in the background, and opens http://127.0.0.1:8000. See [Running Orbit](#running-orbit-on-your-machine) for stop, status and start-at-login.
+
 ## Core ideas
 
 - **One strategy at a time** — no juggling multiple competing strategies until one is proven.
@@ -18,24 +26,26 @@ orbit/
   src/orbit/
     data/          # fetch + store price & ephemeris data (stitched full histories)
     features/      # raw data -> signals (indicators, regime, astro transits)
-    analysis/      # transit research: events, outcomes, significance, the playbook
+    vedic/         # Vedic (Jyotish) rules: sidereal sky, grahas, events, drishti, yogas, states
+    analysis/      # research: outcomes, significance, the playbook, the Vedic model
     api/           # HTTP + WebSocket API the web terminal reads
-    strategy/       # the one active strategy: entry/exit/risk rules
-    backtest/       # historical simulation + walk-forward validation
-    journal/        # trade log schema + read/write
-    runner/          # 24/7 loop: schedule -> evaluate -> alert
-    alerts/          # Telegram/console notifier
+    strategy/       # the one active strategy (RSI divergence), live suggestions, the feedback loop
+    backtest/       # full-history backtest + live-vs-backtest drift
+    journal/        # every suggestion, your decision, and its outcome
+    runner/          # 24/7 loop: data -> features -> suggestions; daily analysis
+    alerts/          # Telegram/console notifier (not built yet)
+    launcher.py      # start/stop/status/autostart on any OS (scripts/start_orbit.py)
     config/          # settings (assets, timeframe, secrets via .env)
     core/            # shared types used everywhere (Candle, Signal, Trade, ...)
   web/               # React trading terminal (see web/README.md)
     src/api/         # API client; types mirrored from core/types.py and api/schemas.py
     src/panels/      # one screen per terminal function (chart, watchlist, suggestions, ...)
   tests/             # mirrors src/orbit structure
-  scripts/           # one-off manual scripts
-  data/              # local price history, ephemeris, features, playbook output (gitignored)
+  scripts/           # start/stop/autostart, plus one-off manual scripts
+  data/              # everything local to this machine: prices, ephemeris, playbook, journal (gitignored)
 ```
 
-`strategy/`, `backtest/`, `journal/` and `alerts/` are still empty stubs — see Status below for what's actually built.
+Only `alerts/` is still an empty stub — see Status below for what's built.
 
 ## Getting started
 
@@ -48,19 +58,32 @@ uv run pytest -q
 
 That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
 
-Then build the local data. None of these steps needs an API key:
+Then build the local data once. None of these steps needs an API key (the runner keeps it all current afterwards):
 
 ```bash
 uv run python scripts/fetch_data.py        # full daily + hourly history; the first run takes ~8 min, later runs fetch only new bars
-uv run python scripts/backfill_silver.py   # one-time spot-silver download from Dukascopy (throttled: can take hours; resumable)
-uv run python scripts/fetch_ephemeris.py   # planetary positions, 60 years back and 2 ahead
-uv run python scripts/compute_features.py  # technical, regime and astro features
-uv run python scripts/build_playbook.py    # transit playbook, daily + hourly (~1.5 min)
-uv run python scripts/placebo_check.py     # optional sanity check of the playbook method (~12 min)
-uv run python -m orbit.api                 # API for the web terminal, on http://127.0.0.1:8000
+uv run python scripts/fetch_ephemeris.py   # the Vedic sky 2000-2028 and its ~33,000 events (~30 s)
+uv run python scripts/compute_features.py  # technical, regime and Vedic features
+uv run python scripts/build_playbook.py    # Vedic playbook, daily + hourly (~5 min); or press RUN ANALYSIS in the web terminal
+uv run python scripts/placebo_check.py     # optional sanity check of the playbook method (~40 min)
 ```
 
-**Note for Windows machines with Smart App Control / Application Control:** it blocks pandas' compiled files, so nothing in `src/` imports pandas; the maths uses numpy, which loads fine.
+`scripts/start_orbit.py` then runs everything else, including the one-time spot-silver download from Dukascopy (throttled: it can take hours, and resumes where it stopped).
+
+**Note for Windows machines with Smart App Control / Application Control:** it blocks pandas' compiled files, so nothing in `src/` imports pandas; the maths uses numpy, which loads fine. The launcher uses only the standard library for the same reason.
+
+### Running Orbit on your machine
+
+Orbit runs on whichever PC is on; there is no server. Each machine keeps its own `data/` (prices, playbook, journal), so two machines can run side by side.
+
+| Command | What it does |
+| --- | --- |
+| `python scripts/start_orbit.py` | Starts the API (which serves the web terminal, rebuilt first if its sources changed), the runner, and the silver download if it isn't complete, each detached in the background; opens http://127.0.0.1:8000. Safe to run twice. |
+| `python scripts/start_orbit.py --status` | What's running, whether the web build and silver download are done, whether autostart is on |
+| `python scripts/stop_orbit.py` | Stops the API, runner and silver download. An analysis run in progress finishes on its own. |
+| `python scripts/autostart.py` | Start Orbit at login (per user, no admin): a `.cmd` in the Windows Startup folder, a macOS LaunchAgent, or a Linux XDG autostart entry. `--remove` undoes it. |
+
+Double-click shortcuts: `start_orbit.cmd` on Windows, `./start_orbit.sh` on macOS/Linux. Output goes to `data/logs/{api,runner,silver}.out`; the runner's own log is `data/logs/runner.log`. Use the `.venv` Python (`.venv/Scripts/python` on Windows, `.venv/bin/python` elsewhere) or `uv run python` for the commands above; the launcher itself works with any Python 3.11+.
 
 ### Web terminal
 
@@ -75,9 +98,11 @@ npm test         # unit tests
 
 It opens on the monitor screen: a chart on the left and the watchlist on the right. Press `F1` for every command and key.
 
-- **Everything shown is real:** live prices from Binance (silver delayed, from Yahoo), the stored histories, the regime gate, planet positions, the transit playbook and runner status. There is no mock data.
-- **Chart:** LIVE mode is TradingView's embedded chart with their own data. ORBIT mode draws the full stored history with regime flips and transit markers.
-- **Layers not built yet** (strategy, journal, backtest) show an explicit "not built yet" screen. They fill in by themselves once the API reports those layers as built.
+- **Everything shown is real:** live prices from Binance (silver delayed, from Yahoo), the stored histories, the regime gate, the Vedic sky, the playbook, suggestions, the journal, the backtest and runner status. There is no mock data.
+- **Chart:** LIVE mode is TradingView's embedded chart with their own data. ORBIT mode draws the full stored history with every RSI divergence, regime flips and Vedic markers.
+- **Reports not generated yet** (a backtest before the first analysis run, say) show an explicit empty screen saying how to produce them.
+
+`start_orbit.py` builds and serves the web terminal from the API, so `npm run dev` is only needed while working on the UI.
 
 See [`web/README.md`](web/README.md) for the screens and the API contract.
 
@@ -109,26 +134,40 @@ This README is the single source of truth for planning — update it in place wh
   - Hourly bars too, from the same venues: BTC 2013+ (~120k bars), ETH 2016+, SOL 2020+, silver 2003+.
   - Before joining two venues it checks that their closes agree over the overlap (currently a median gap of about 0.45%) and refuses if they don't. Every bar records its source, and each build writes `data/history_report.json`.
   - Fetchers live in `data/binance.py`, `bitstamp.py`, `coinbase.py` and `silver.py`, sharing a retrying HTTP helper. Run with `uv run python scripts/fetch_data.py`.
-- `data/ephemeris.py` — daily planetary positions (zodiac sign + retrograde) via Skyfield, 60 years back and 2 years ahead, dated at UTC midnight like the prices — done. Run with `uv run python scripts/fetch_ephemeris.py`.
+- `vedic/` — the Vedic (Jyotish) layer, the only astrology Orbit uses — done:
+  - `sky.py`: sidereal longitudes and speeds of the 9 grahas (Surya, Chandra, Mangal, Budh, Guru, Shukra, Shani, Rahu, Ketu) from NASA JPL's DE421 via Skyfield, in the Lahiri / true-Chitrapaksha ayanamsa (Spica fixed at 0° Libra: 23.84° at J2000). Rahu is the mean node with precession removed; Ketu is opposite. Sampled every 6 hours from 2000 to 2028 and cached (`data/vedic/sky.npz`).
+  - `zodiac.py`: the rules: 12 rashis, 27 nakshatras (4 padas each), uchcha/neecha, graha drishti (every graha the 7th; Mangal 4th and 8th, Guru 5th and 9th, Shani 3rd and 10th, Rahu/Ketu 5th and 9th), asta orbs (with the vakri orbs for Budh and Shukra), graha yuddha, malefics and benefics.
+  - `events.py`: ~33,000 events, each refined to the second by bisection: rashi and nakshatra ingresses, vakri/margi stations, yuti, drishti, asta, graha yuddha, amavasya, purnima, surya and chandra grahan, named yogas (Kaal Sarp / Kaal Amrit, Gajakesari, Shani-Mangal), and malefic/benefic clusters. Checked against known dates (Shani into Meena 29 Mar 2025, Rahu into Kumbha 18 May 2025, the 2024-26 eclipses, Makar Sankranti).
+  - `states.py`: the daily Vedic state of the sky (285 states: vakri, asta, rashi placements, dignity, yuti, drishti, yogas, paksha, eclipse windows) for the chop track and the model.
+  - `scripts/fetch_ephemeris.py` builds the sky and events.
 - `data/storage.py` — save/load candles and ephemeris snapshots as CSV under `data/` — done.
 - `features/store.py` — the feature store: append-only CSV per asset, long format (date, name, value) — done.
 - `features/technical.py` — daily return, close vs. 50/200-day SMA, 20-day volatility, computed as numpy rolling windows so full histories stay fast — done.
 - `features/regime.py` — the regime gate (BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY) plus `compute_regime_series` to log its full history, not just a live reading — done.
-- `features/astro.py` — encodes ephemeris sign/retrograde as numeric features per tracked asset — done.
-- `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
+- `features/astro.py` — each graha's sidereal rashi, vakri and asta, plus the Moon's nakshatra, as daily features per asset — done.
+- `scripts/compute_features.py` — runs the full pipeline (technical + regime + Vedic) into the feature store — done.
 - `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
-- `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process. It writes a heartbeat (`data/runner_status.json`) that the API reports — done, verified against real data end to end.
-- `analysis/` — the transit playbook: sign ingresses and retrograde stations, outcomes over several forward horizons, significance tests, confidence labels, exception context and a chop track — done. Each transit also has its exact moment to the second and an hourly drill-down from it. See "Astro-transit research track" below for method and findings.
+- `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, checks the strategy for a new suggestion and resolves outcomes, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process. It writes a heartbeat (`data/runner_status.json`) that the API reports — done, verified against real data end to end.
+- `analysis/` — the Vedic playbook: every event type and combination above, outcomes over several forward horizons, significance tests, confidence labels, exception context and a chop track — done. Each event has its exact moment to the second and an hourly drill-down from it. `analysis/model.py` also asks the combined question: does knowing the whole Vedic sky improve a forecast? See "Astro research track" below for method and findings.
   - Run it from the web terminal (**RUN ANALYSIS** on ASTRO → PLAYBOOK, or on SYS), from the runner's daily schedule, or with `uv run python scripts/build_playbook.py`.
   - Runs from the button and the schedule are background jobs (`analysis/jobs.py`): one at a time, with live progress, a log, and a record of which labels changed.
-- `api/` — FastAPI server the web terminal reads: stored data, the playbook, runner status, and live prices over `/ws` — done. Run with `uv run python -m orbit.api`.
+- `strategy/rsi_divergence.py` — the one active strategy, RSI(14) divergence on daily bars — done. See "Strategy, backtest, journal and feedback loop" below.
+- `backtest/engine.py` — replays the strategy over every asset's full history with costs; re-run on every analysis run — done.
+- `journal/store.py` + `strategy/live.py` — suggestions from the latest completed bar, your decisions, and every suggestion followed to its outcome automatically (taken or not) — done.
+- `strategy/calibrate.py` — the feedback loop: learns which divergences worked, retrained on every analysis run with backtest and live outcomes — done.
+- `backtest/drift.py` — live results vs. the backtest's expectation, as a z-score — done.
+- `api/` — FastAPI server the web terminal reads: stored data, the playbook, suggestions and decisions, the journal, backtest, feedback loop, drift, the Vedic model, runner status, and live prices over `/ws` — done. Run with `uv run python -m orbit.api` (or `scripts/start_orbit.py`).
 - `web/` — the React trading terminal, on real data only — done. It has a command line with a Ctrl+K palette and F-key screens:
   - MON: chart and watchlist
-  - GP: live TradingView chart, or Orbit's full-history chart with regime and transit markers
-  - ASTRO: current sky, transit calendar, playbook and chop track
+  - GP: live TradingView chart, or Orbit's full-history chart with divergence, regime and Vedic markers
+  - SUGG: suggestions to take, skip or modify
+  - JRNL: every decision and outcome, including what skipped suggestions would have returned
+  - DRIFT: live vs. backtest, the full backtest, and the feedback loop
+  - ASTRO: the Vedic sky, event calendar, playbook, chop track and model
   - SYS: runner, layers, feeds, log and config
-  - SUGG, JRNL and DRIFT are ready but show "not built yet" until those layers exist
-- Per-asset entry scoring, the actual strategy rules, backtesting, and the journal — not started yet.
+- `launcher.py` — `scripts/start_orbit.py`, `stop_orbit.py` and `autostart.py`: the same commands on Windows, macOS and Linux — done.
+- CI (`.github/workflows/ci.yml`) — Python tests on Windows, macOS and Linux, plus the web typecheck, lint, tests and build, on every push to `main` and every pull request — done.
+- Alerts (Telegram) and position sizing — not started yet.
 
 ### Running the 24/7 runner
 
@@ -136,9 +175,9 @@ This README is the single source of truth for planning — update it in place wh
 uv run python -m orbit.runner.loop
 ```
 
-Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Logs go to console and `data/logs/runner.log`.
+`scripts/start_orbit.py` starts this for you. Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Each cycle also creates a suggestion if an RSI divergence confirmed on the latest completed bar, expires undecided ones, and resolves outcomes. Logs go to console and `data/logs/runner.log`.
 
-It also starts the analysis every day at **00:30 UTC** (`ANALYSIS_DAILY_AT_UTC`), after refreshing data so the new daily bar is included. Sunday's run also runs the placebo check (`PLACEBO_WEEKDAY`). If the machine was off at 00:30, it catches up as soon as the runner is up that day. It skips the run when one already succeeded after that day's slot, and retries a failed run at most 3 times, an hour apart. Windows has no cron, so the schedule lives in the runner rather than the OS. This process needs to actually stay running somewhere — for now that's a terminal you leave open; the "VPS vs home server" open decision below is about making that permanent.
+It also starts the analysis every day at **00:30 UTC** (`ANALYSIS_DAILY_AT_UTC`), after refreshing data so the new daily bar is included. Sunday's run also runs the placebo check (`PLACEBO_WEEKDAY`). If the machine was off at 00:30, it catches up as soon as the runner is up that day. It skips the run when one already succeeded after that day's slot, and retries a failed run at most 3 times, an hour apart. The schedule lives in the runner rather than the OS, so it works the same everywhere. Each run rebuilds the playbook, backtests the strategy, retrains the feedback loop and re-checks the Vedic model.
 
 ### Running the web API (backend for the React frontend)
 
@@ -146,15 +185,39 @@ It also starts the analysis every day at **00:30 UTC** (`ANALYSIS_DAILY_AT_UTC`)
 uv run python -m orbit.api        # or, while developing: uv run uvicorn orbit.api.app:app --reload
 ```
 
-Serves on `http://127.0.0.1:8000` by default, matching what `web/vite.config.ts` proxies `/api` and `/ws` to. Run `scripts/fetch_data.py`, `scripts/fetch_ephemeris.py` and `scripts/build_playbook.py` first (see Getting started) so there's real data for it to serve. The web terminal always reads this API; there is no mock mode.
+Serves on `http://127.0.0.1:8000` by default, and also serves the built web terminal (`web/dist`) there. `web/vite.config.ts` proxies `/api` and `/ws` to it during UI development. Run the Getting started scripts first so there's real data for it to serve. The web terminal always reads this API; there is no mock mode.
 
-It only reads what the scripts and runner have stored; it never fetches history or runs research itself. The one exception is live prices: a background task polls Binance and Yahoo (for silver) and pushes each tick over `/ws`.
+It only reads what the scripts and runner have stored; it never fetches history or runs research itself. The exceptions: live prices (a background task polls Binance and Yahoo for silver, and pushes each tick over `/ws`), starting an analysis run, and logging your decision on a suggestion, which writes the journal and never places an order.
 
-**Layers that don't exist yet answer honestly:**
-- `/api/suggestions` and `/api/journal` return `[]`.
-- A decision POST returns `501`.
-- `/api/drift` returns `404`, with an explanation.
-- `/api/system` lists which layers are built, so the UI can say "not built yet" rather than show empty numbers.
+Reports that don't exist yet (no backtest before the first analysis run, say) answer `404` with an explanation, and `/api/system` lists which layers exist. The full endpoint list is in [`web/README.md`](web/README.md).
+
+## Strategy, backtest, journal and feedback loop
+
+**The strategy** (`strategy/rsi_divergence.py`) is basic RSI(14) divergence on daily bars, with textbook parameters fixed before looking at any results:
+
+- **Bullish:** price makes a lower swing low while RSI makes a higher low, and the first low had RSI under 40. **Bearish** is the mirror: a higher swing high with a lower RSI high, the first above 60.
+- A swing is the lowest (highest) bar of the 5 before it and 3 after, so it is only known 3 bars later. The signal fires on that confirmation bar and uses nothing that wasn't known then (tested).
+- The two swings are 5 to 60 bars apart. Stop: beyond the second swing by 0.5 ATR(14). Target: 2R. Out after 30 bars if neither is hit.
+
+**The backtest** (`backtest/engine.py`) replays it over every asset's full stored history: entry at the next bar's open, stop assumed hit first when a bar touches both levels, gaps through a level exit at the open, one trade at a time per asset, and costs of 0.1% a side (0.05% for silver) plus 0.05% slippage. Results as of Sept 2026:
+
+| | Trades | Win rate | Avg R | Profit factor | Max drawdown |
+| --- | --- | --- | --- | --- | --- |
+| All assets | 215 | 39.5% | −0.013R | 0.98 | −16.5R |
+| BTC | 67 | 36% | −0.067R | 0.88 | −8.2R |
+| ETH | 39 | 44% | −0.008R | 0.99 | −9.3R |
+| SOL | 23 | 30% | −0.057R | 0.90 | −3.8R |
+| Silver | 86 | 43% | +0.038R | 1.06 | −8.6R |
+| Longs (all) | 73 | | +0.129R | | |
+| Shorts (all) | 142 | | −0.086R | | |
+
+In plain words: as a whole, basic RSI divergence is roughly break-even after costs. The bullish side has been positive (+0.13R a trade), the bearish side negative, and silver slightly positive. That is the honest starting point the feedback loop and your journal build on.
+
+**Suggestions and the journal** (`strategy/live.py`, `journal/store.py`): after every data refresh, a divergence that confirmed on the latest completed bar becomes a suggestion in SUGG (entry at that bar's close, the stop and 2R target, the signals behind it). You take, skip or modify it; undecided suggestions expire after 3 bars. Every suggestion is then followed to its outcome automatically with the strategy's own levels, whether you took it or not, so the journal shows what skipped ones would have returned. Taken or modified ones are also followed with the levels you used. The journal is `data/journal/suggestions.json` on each machine, written atomically with a dated daily backup.
+
+**The feedback loop** (`strategy/calibrate.py`): a small logistic model learns which divergences actually won, from what was known at the signal: divergence size, RSI level, the price move between the swings, their distance apart, ATR, volatility percentile, trend agreement, and long vs. short. It trains on every backtest trade plus every finished live suggestion (each counted 3×, as the most recent evidence), and is retrained on every analysis run. It is checked walk-forward (trained on earlier years, tested on the next), and it only sets a suggestion's confidence once it beats the plain win rate there. So far it doesn't (Brier 0.256 vs 0.246, AUC 0.50), so every suggestion's confidence is the plain win rate, about 40%. DRIFT → FEEDBACK shows this check after every run.
+
+**Drift** (`backtest/drift.py`): live win rate vs. the backtest's, as a z-score, once there are 10 finished live suggestions. At 1σ it's WATCH; at 2σ it's DRIFT, the point to scale down.
 
 ## Full plan
 
@@ -176,26 +239,24 @@ A shared *regime gate* computed from BTC (and ETH) decides whether the environme
 | Web terminal | Keyboard-first dashboard (`web/`) to review suggestions with their reasoning and log take/skip/modify decisions to the journal |
 | Feedback loop | Trade journal of every suggestion + decision + outcome, used to periodically reweight the scorecard |
 
-### Astro-transit research track
+### Astro research track (Vedic rules only)
 
-Treated as one testable input among others — back-tested with the same rigor as technical signals, not taken on faith.
+Treated as one testable input among others — back-tested with the same rigor as technical signals, not taken on faith. All astrology in Orbit follows Vedic (Jyotish) rules: the sidereal zodiac with the Lahiri / Chitrapaksha ayanamsa, the 9 grahas, rashi-based graha drishti, and the classical yogas (see `vedic/` under Status).
 
-- **Ephemeris source**: Skyfield (pure Python, no compiler needed) — exact planetary positions/transits for any date, free, precise. (Originally planned as Swiss Ephemeris via `pyswisseph`, but that needs a C++ compiler not available on this machine.)
-- **Event tagging**: a table of historical transit events (sign changes, retrogrades, conjunctions/aspects) mapped to date ranges, joined against price history to compute frequency, average move and win rate after each event type.
-- **Significance testing**: long-cycle transits (e.g. Jupiter ~12 years) give very few historical samples — explicitly test whether any correlation is statistically real or noise before trusting it.
-- **Status**: the transit playbook is built (`analysis/`), with a run button and a daily schedule.
-- **Exact moments**: every transit since 2000 is refined to the second from the JPL ephemeris (bisection on the sign boundary for ingresses, on zero speed for stations). Events are dated on the UTC day they really happened: the midnight-based daily detection sees ingresses a day late and stations up to two days late.
+- **Ephemeris source**: Skyfield with NASA JPL's DE421 (pure Python, no compiler needed), converted to sidereal longitudes. (Originally planned as Swiss Ephemeris via `pyswisseph`, but that needs a C++ compiler not available on this machine.)
+- **Events tested**: each graha's rashi ingress (overall and into each rashi); the Moon's and Sun's nakshatra changes; vakri and margi stations; yuti (two grahas in one rashi); drishti (mutual 7th, and each special aspect by house); asta; graha yuddha; amavasya and purnima; surya and chandra grahan; the named yogas; and malefic or benefic clusters (several relations starting within a week).
+- **Combinations**: yuti and drishti are tested per pair of grahas, and again with a `|VAKRI` variant when one of them was retrograde. Named yogas and clusters are combinations by definition. In total 419 patterns per asset.
+- **Exact moments**: every event since 2000 is refined to the second by bisection, and dated on the UTC day it really happened.
 - **Hourly drill-down**: from each exact moment, the same big-up / big-down / sideways test over 6, 24 and 72 hourly bars, with its own FDR family per asset. Each occurrence also records:
   - what price did in the 72 hours before
   - how many hours until price had moved one normal day's range (daily ATR) in the move's direction
   - when the largest move in that direction came, and its size
 
   The terminal shows each occurrence's hourly chart, with those points marked.
-- **Events**: sign ingresses (first entries tested; backward ingresses and re-entries recorded but not double-counted) and retrograde stations (the retrograde flag with one- and two-day flickers removed). Aspects and conjunctions are deferred.
-- **Outcomes**: forward returns over horizons that depend on planet speed:
-  - Moon: 1, 3 and 5 bars
-  - Sun to Mars: 1, 5, 10 and 20 bars
-  - Jupiter outward: 20, 40 and 60 bars
+- **Outcomes**: forward returns over horizons that depend on how fast the grahas involved move:
+  - Moon-driven events: 1, 3 and 5 bars
+  - fast grahas and lunations: 1, 5, 10 and 20 bars
+  - slow grahas only (Guru, Shani, Rahu, Ketu): 20, 40 and 60 bars
 
   Each is labelled against the asset's *own* history: BIG_UP or BIG_DOWN for its top or bottom 15% of returns at that horizon; SIDEWAYS for a small net move (measured against ATR) while the market still moved normally; NEUTRAL otherwise.
 - **Significance**:
@@ -209,18 +270,22 @@ Treated as one testable input among others — back-tested with the same rigor a
 - **Exceptions**: every occurrence that went against its pattern's dominant outcome is listed with its context:
   - the regime at the time (the shared gate for crypto, silver's own trend)
   - the volatility percentile
-  - other transits in the same window, and any that lean the opposite way
-- **Chop track**: separately, which transit *states* (e.g. "Mercury retrograde", "Saturn in Pisces") coincide with sideways markets. The sample size counted is distinct episodes, not days.
-- **Validation**: `scripts/placebo_check.py` moves every transit date (and exact moment) by arbitrary offsets and re-runs everything, daily and hourly; any moderate or strong result on those fake calendars is a false discovery.
-  - The first version produced false discoveries in 6 of 32 placebo runs, caused by separate correction families and a normal-curve tail. Both were fixed.
-  - It now produces 0 of 32 (daily) and 0 of 32 (hourly timing).
-  - A planted-effect unit test confirms the method still catches a real effect.
-- **Findings so far (Sept 2026)**: 3,177 tests across four assets, daily and hourly.
-  - **No transit pattern survives multiple-testing correction for any asset, at daily or hourly resolution.** That is 0 strong and 0 moderate.
-  - Some patterns are "weak" (nominally significant), at about the rate chance alone produces. Dating events on their real day (instead of up to 2 days late) swapped about 30 patterns in and out of "weak", which confirms they're noise rather than stable effects.
-  - Slow planets (Jupiter outward) almost never reach the 12-occurrence minimum in crypto histories, which is the expected, honest outcome.
-  - The playbook re-runs every day. A pattern only counts once it clears the correction.
-  - Aspects and combinations of planets are not tested yet (a spec is coming).
+  - other events in the same window, and any that lean the opposite way
+- **Chop track**: separately, which Vedic *states* (e.g. "Budh vakri", "Shani in Meena", "Kaal Sarp yoga") coincide with sideways markets. The sample size counted is distinct episodes, not days.
+- **The Vedic model** (`analysis/model.py`): the combined question the playbook can't ask one pattern at a time. Does knowing the whole Vedic sky (all 285 daily states at once) make a forecast of big up, big down or sideways moves, 5 and 20 days ahead, better than price alone?
+  - It is a ridge logistic regression, trained walk-forward: retrained every 2 years, always tested on the years after, with the ridge strength picked on the last 20% of each training window.
+  - The price-only model uses 9 features: returns, volatility, trend and RSI.
+  - The sky gets credit only if adding it beats price alone out-of-sample, **and** beats the same Vedic data shifted by about 2 and 4 years, **and** beats simply guessing the base rate, in most of the test years. The shifted controls have the same structure but can't know anything.
+- **Validation**: `scripts/placebo_check.py` moves every event date (and exact moment) by arbitrary offsets and re-runs everything, daily and hourly; any moderate or strong result on those fake calendars is a false discovery. Before the Vedic switch it produced 0 of 32 (daily) and 0 of 32 (hourly timing), after fixing an earlier 6 of 32. A planted-effect unit test confirms the method still catches a real effect.
+- **Findings so far (Sept 2026)**: 12,868 tests across four assets and 11 families, daily and hourly.
+  - **No Vedic pattern survives multiple-testing correction for any asset, at daily or hourly resolution.** That is 0 strong and 0 moderate.
+  - Some patterns are "weak" (nominally significant): BTC 62, ETH 38, SOL 23, silver 87 (daily), at about the rate chance alone produces among that many tests.
+  - The model: 24 targets checked (4 assets × big up / big down / sideways × 5 and 20 days ahead). 22 show no added skill.
+    - SOL's big up moves 20 days ahead passed: +3.5% skill with the sky vs. −0.4% on price alone, better in all 3 test years, and beating the one control SOL's short history allows.
+    - Silver's sideways 5 days ahead is "unclear": the gain is too small to beat simply guessing the base rate.
+    - One or two passes out of 24 is what chance alone produces, so SOL's result is on watch, not trusted, until it holds on later runs.
+  - Price alone has a small real edge on big up moves 5 days ahead (BTC: about 4% better than guessing the base rate, AUC ~0.61).
+  - The playbook and model re-run every day. A pattern only counts once it clears the correction; the sky only counts once it beats the controls.
 
 ### Signal research reference
 
@@ -235,21 +300,20 @@ Notes from researching how professional quant systems structure this, so we buil
 
 | Phase | Description | Status |
 | --- | --- | --- |
-| 1. Define the strategy | Assets, timeframe, entry/exit rules, risk rules on paper | Not started |
+| 1. Define the strategy | Assets, timeframe, entry/exit rules, risk rules on paper | Done: RSI(14) divergence, daily, all four assets; position sizing not yet |
 | 2. Data pipeline | Price data + ephemeris data, stored locally | Done: full stitched histories, incremental updates, ephemeris 2 years ahead |
-| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Astro factors tested (transit playbook, placebo-checked); backtest engine itself not started |
-| 4. Trade journal + scorecard | Logging schema for every signal and decision | Not started |
-| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Loop, logging and heartbeat built; alerting not started; not yet deployed to run unattended |
-| 6. Feedback loop | Review cadence to correct/reweight the scorecard | Not started |
+| 3. Backtest engine | Walk-forward validation; test astro factors for significance | Done: full-history strategy backtest with costs; Vedic playbook and model (placebo-checked, walk-forward) |
+| 4. Trade journal + scorecard | Logging schema for every signal and decision | Done: every suggestion, decision and outcome, including skipped ones |
+| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Done: runs on whichever PC is on, via `scripts/start_orbit.py` (optionally at login); alerting not started |
+| 6. Feedback loop | Review cadence to correct/reweight the scorecard | Done: retrained on every analysis run; sets confidence only once it beats the plain win rate out-of-sample |
 | 7. Auto-execution | Enabled later, once confidence is earned | Not started |
-| Web terminal | Dashboard for suggestions, decisions, journal, drift and runner status | Built on real data via `api/`; suggestion, journal and drift screens wait on their layers |
+| Web terminal | Dashboard for suggestions, decisions, journal, drift and runner status | Done, on real data via `api/` |
+| CI | Tests on every push and pull request | Done: Python on Windows, macOS, Linux; web typecheck, lint, tests, build |
 
 ### Open decisions
 
 - **Project name**: working title **Orbit** (used for the astro-transit + always-on-monitoring theme).
-- **Strategy definition**: exact assets/timeframe/entry-exit rules for the single strategy — not yet locked; deliberately deferred while the data layer gets built out first.
-- **Hosting for the 24/7 runner**: VPS vs home server — not yet decided.
-- **Journal fields**, to settle when `journal/` is built:
-  - Is `JournalEntry.outcome_pnl` a percent return? The UI assumes it is.
-  - The API's journal rows add `counterfactual_pnl`: what a skipped suggestion would have returned.
-- **Hosting for the schedule**: the daily 00:30 UTC analysis only happens while the runner is running, so it goes with the runner's hosting decision above.
+- **Strategy definition**: settled for now: basic RSI(14) divergence (above). Refinements should come from the journal and the feedback loop, one change at a time, each re-backtested.
+- **Hosting**: settled: no server. Orbit runs on the team's own PCs (`scripts/start_orbit.py`, optionally at login). The daily 00:30 UTC analysis runs whenever a runner is up, and catches up when a PC comes back on.
+- **Journal fields**: settled: `JournalEntry.outcome_pnl` is the percent return net of costs on the levels you acted on; journal rows add `counterfactual_pnl` (what a skipped or expired suggestion would have returned), `expired`, and `exit_reason`.
+- **Position sizing and alerts**: next to decide.
