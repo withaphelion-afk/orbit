@@ -17,9 +17,9 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Asset, AstroEvent, Candle, Signal, SuggestionView } from '../../api/types'
+import type { Asset, Candle, Signal, SuggestionView, TransitView } from '../../api/types'
 import { ASSET_META } from '../../config'
-import { price, signed, tone } from '../../lib/format'
+import { price, signed, tone, transitLabel } from '../../lib/format'
 import { sma } from '../../lib/indicators'
 import { readTheme } from '../../lib/theme'
 import { useTerminal } from '../../state/store'
@@ -30,7 +30,7 @@ interface Props {
   asset: Asset
   candles: Candle[]
   signals: Signal[]
-  transits: AstroEvent[]
+  transits: TransitView[]
   pending?: SuggestionView
 }
 
@@ -44,9 +44,10 @@ interface Series {
 }
 
 /**
- * Orbit's own chart (TradingView lightweight-charts): candles, volume, 20/50D
- * averages, signal and transit markers, and the pending suggestion's
- * entry/stop/target lines. The last bar follows live ticks.
+ * Orbit's own chart (TradingView lightweight-charts) on the stored full
+ * history: candles, volume, 20/50D averages, regime-flip markers, transit
+ * markers, and a pending suggestion's entry/stop/target lines once the
+ * strategy layer produces suggestions. The last bar follows live ticks.
  */
 export function OrbitChart({ asset, candles, signals, transits, pending }: Props) {
   const host = useRef<HTMLDivElement>(null)
@@ -133,17 +134,29 @@ export function OrbitChart({ asset, candles, signals, transits, pending }: Props
       position: s.direction === 'LONG' ? 'belowBar' : 'aboveBar',
       shape: s.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
       color: s.direction === 'LONG' ? th.up : th.down,
-      text: s.name === 'ma_cross' ? 'MA×' : s.name === 'rsi_extreme' ? (s.direction === 'LONG' ? 'RSI<30' : 'RSI>70') : s.name,
+      text: s.direction === 'LONG' ? 'BULL' : 'BEAR',
       size: 0.8,
     }))
-    for (const e of transits) {
-      const t = ts(e.timestamp)
+    // Markers need a bar at their time: move weekend transits (silver) to the next bar.
+    const barTimes = candles.map((c) => ts(c.timestamp))
+    for (const v of transits) {
+      const t = ts(v.event.date)
       if (t < first || t > last) continue
-      m.push({ time: t, position: 'aboveBar', shape: 'square', color: th.astro, text: `${e.body.slice(0, 3)} ${e.event.split(' ')[0].toUpperCase()}`, size: 0.6 })
+      const k = barTimes.findIndex((b) => b >= t)
+      if (k < 0) continue
+      const notable = v.notable.find((n) => n.asset === asset)
+      m.push({
+        time: barTimes[k],
+        position: 'aboveBar',
+        shape: notable ? 'circle' : 'square',
+        color: th.astro,
+        text: transitLabel(v.event, true) + (notable ? ` · ${notable.label}` : ''),
+        size: notable ? 0.9 : 0.5,
+      })
     }
     m.sort((x, y) => (x.time as number) - (y.time as number))
     a.markers.setMarkers(m)
-  }, [signals, transits, candles])
+  }, [signals, transits, candles, asset])
 
   // Pending suggestion levels.
   useEffect(() => {
@@ -209,7 +222,7 @@ export function OrbitChart({ asset, candles, signals, transits, pending }: Props
         <div className="chart-keys">
           <span>
             <b style={{ background: 'var(--up)' }} />
-            SIGNAL
+            REGIME FLIP
           </span>
           <span>
             <b style={{ background: 'var(--astro)' }} />

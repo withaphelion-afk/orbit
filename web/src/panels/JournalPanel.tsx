@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { useJournal } from '../api/hooks'
+import { useComponents, useJournal } from '../api/hooks'
 import type { JournalRow } from '../api/types'
-import { Seg } from '../components/bits'
+import { NotBuilt, QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
 import { day, num, price, signed, tone } from '../lib/format'
@@ -20,7 +20,9 @@ const sortValue: Record<SortKey, (r: JournalRow) => number | string> = {
 }
 
 export function JournalPanel({ hidden }: { hidden: boolean }) {
-  const { data = [], isError, error } = useJournal()
+  const { components, error: sysError, isPending: sysPending } = useComponents()
+  const built = !!components?.journal
+  const { data = [], isError, error } = useJournal(built)
   const [filter, setFilter] = useState<Filter>('ALL')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'date', dir: -1 })
 
@@ -48,7 +50,18 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
 
   return (
     <Panel code="JRNL" title="Trade journal" hidden={hidden} meta={<Seg label="Filter" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ label: f, value: f }))} />}>
-      {isError && <p className="load-err">Couldn't load the journal: {String(error)}</p>}
+      {!components ? (
+        <QueryState isPending={sysPending} error={sysError} what="system status" />
+      ) : !built ? (
+        <NotBuilt layer="JOURNAL">
+          <span>
+            The journal records every suggestion, what you decided and how it played out. It needs the strategy layer to produce suggestions
+            first, and <code>src/orbit/journal/</code> is still empty.
+          </span>
+        </NotBuilt>
+      ) : (
+      <>
+      {isError && <QueryState isPending={false} error={error} what="the journal" />}
       <div className="jbar">
         <div>
           <span className="lbl">Acted</span>
@@ -130,6 +143,8 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </Panel>
   )
 }

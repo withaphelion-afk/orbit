@@ -73,9 +73,30 @@ export function HelpPanel({ hidden }: { hidden: boolean }) {
           </table>
         </section>
         <section>
+          <h3>WHERE THE DATA COMES FROM</h3>
+          <p>
+            Everything is real. Stored daily history is stitched from Bitstamp and Coinbase (early BTC and ETH) and Binance, and silver comes
+            from Yahoo futures. Live prices stream from Binance every few seconds; silver's are delayed. Planet positions come from NASA JPL's
+            DE421 ephemeris.
+          </p>
+          <p>Screens for layers that aren't built yet (strategy, journal, backtest) say so instead of showing anything made up.</p>
+        </section>
+        <section>
+          <h3>TRANSIT PLAYBOOK (ASTRO)</h3>
+          <p>
+            For each asset, every sign ingress and retrograde station is scored against what followed it: a big move (the asset's own top or
+            bottom 15%), a sideways stretch, or neither. Each pattern is tested against a shifted version of its own calendar, then corrected
+            for how many tests were run.
+          </p>
+          <p>
+            STRONG and MODERATE survive that correction; WEAK doesn't; TOO FEW (under 12 occurrences) is never tested. Placebo runs on fake
+            calendars check that the method isn't finding patterns in noise.
+          </p>
+        </section>
+        <section>
           <h3>CHART</h3>
           <p>LIVE streams TradingView's own market data through their embedded chart, with their drawing tools and intervals.</p>
-          <p>ORBIT draws Orbit's candles with its signals, astro transits and the pending suggestion's entry, stop and target lines. TradingView's widget can't show those.</p>
+          <p>ORBIT draws Orbit's full stored history with regime flips and transit markers; circles mark transits the playbook rates for this asset. TradingView's widget can't show those.</p>
         </section>
         <section>
           <h3>HOW ORBIT DECIDES</h3>

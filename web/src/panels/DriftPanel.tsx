@@ -1,8 +1,8 @@
 import { ColorType, createChart, LineSeries, LineStyle, type UTCTimestamp } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
-import { useDrift } from '../api/hooks'
+import { useComponents, useDrift } from '../api/hooks'
 import type { DriftReport } from '../api/types'
-import { Pill } from '../components/bits'
+import { NotBuilt, Pill, QueryState } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { num, signed } from '../lib/format'
 import { readTheme } from '../lib/theme'
@@ -42,7 +42,9 @@ function EquityChart({ report }: { report: DriftReport }) {
 }
 
 export function DriftPanel({ hidden }: { hidden: boolean }) {
-  const { data: d, isError, error } = useDrift()
+  const { components, error: sysError, isPending: sysPending } = useComponents()
+  const built = !!components?.backtest
+  const { data: d, isError, error } = useDrift(built)
   const tonePill = d?.status === 'OK' ? 'ok' : d?.status === 'WATCH' ? 'watch' : 'drift'
   return (
     <Panel
@@ -58,7 +60,16 @@ export function DriftPanel({ hidden }: { hidden: boolean }) {
         )
       }
     >
-      {isError && <p className="load-err">Couldn't load drift: {String(error)}</p>}
+      {!components && <QueryState isPending={sysPending} error={sysError} what="system status" />}
+      {components && !built && (
+        <NotBuilt layer="BACKTEST">
+          <span>
+            Drift compares live results with what the backtest predicted, and there is no backtest yet (<code>src/orbit/backtest/</code> is
+            empty) and no live trades logged. Once both exist, the expected-vs-live equity curve and the drift score appear here.
+          </span>
+        </NotBuilt>
+      )}
+      {isError && <QueryState isPending={false} error={error} what="drift" />}
       {d && (
         <div className="drift">
           <div className="dstats">

@@ -8,10 +8,10 @@ export const FUNCTIONS: { code: View; key: string; desc: string }[] = [
   { code: 'HELP', key: 'F1', desc: 'Commands and keys' },
   { code: 'MON', key: 'F2', desc: 'Monitor: chart with the watchlist' },
   { code: 'GP', key: 'F3', desc: 'Price chart for the active asset' },
-  { code: 'SUGG', key: 'F4', desc: 'Suggestions awaiting your decision' },
+  { code: 'SUGG', key: 'F4', desc: 'Suggestions awaiting your decision (strategy not built yet)' },
   { code: 'JRNL', key: 'F5', desc: 'Trade journal' },
   { code: 'DRIFT', key: 'F6', desc: 'Backtest vs live performance' },
-  { code: 'ASTRO', key: 'F7', desc: 'Transit calendar (research)' },
+  { code: 'ASTRO', key: 'F7', desc: 'Sky, transits and the transit playbook (research)' },
   { code: 'SYS', key: 'F8', desc: 'Runner, feeds, alerts and config' },
 ]
 

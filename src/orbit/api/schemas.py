@@ -1,6 +1,8 @@
-"""Response shapes for the web API, mirroring web/src/api/types.ts field for
-field. Keep these two files in sync by hand — the frontend's TS contract is
-the source of truth for what the UI needs; this is Orbit's side of it.
+"""Response shapes the web terminal reads. They wrap the core types (never
+redefine them) and add only what a screen needs: live prices, status views,
+lighter list versions of the playbook.
+
+web/src/api/types.ts mirrors this file; change both together.
 """
 
 from __future__ import annotations
@@ -10,9 +12,20 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from orbit.core.types import Asset, Decision, Planet, Regime, Signal, TradeSuggestion
+from orbit.core.types import (
+    Asset,
+    ConfidenceLabel,
+    Outcome,
+    PatternHorizonStat,
+    Planet,
+    SidewaysStateResult,
+    SpeedClass,
+    TransitEvent,
+    TransitEventType,
+)
 
-Source = Literal["LIVE", "MOCK"]
+PriceSource = Literal["LIVE", "DELAYED", "STORED"]
+RegimeScope = Literal["SHARED", "OWN"]
 
 
 class Quote(BaseModel):
@@ -21,106 +34,129 @@ class Quote(BaseModel):
     prev_close: float
     day_high: float
     day_low: float
-    sparkline: list[float]
-    regime: Regime
-    source: Source
+    sparkline: list[float]  # last 30 daily closes, oldest first
+    regime: str | None  # BULL / BEAR / CHOPPY
+    regime_scope: RegimeScope  # SHARED = BTC/ETH gate, OWN = the asset's own trend
+    source: PriceSource  # LIVE ticks, DELAYED (Yahoo futures), or STORED (last stored close)
+    last_bar_date: datetime
+    updated_at: datetime
 
 
-class SuggestionView(BaseModel):
-    id: str
-    created_at: datetime
-    risk_reward: float
-    suggestion: TradeSuggestion
+class RegimeReading(BaseModel):
+    scope: RegimeScope
+    asset: Asset | None  # None for the shared gate
+    value: str | None
+    since: datetime | None  # first day of the current reading
+    history: list[tuple[datetime, str]]  # every change, oldest first
 
 
-class DecisionRequest(BaseModel):
-    decision: Decision
-    notes: str = ""
-    entry_price: float | None = None
-    stop_loss: float | None = None
-    take_profit: float | None = None
+class SkyPosition(BaseModel):
+    planet: Planet
+    longitude: float
+    sign: str
+    degree: float  # 0-30 within the sign
+    retrograde: bool
+    next_event: TransitEvent | None
 
 
-class JournalRow(BaseModel):
-    id: str
-    decided_at: datetime
-    entry: dict  # JournalEntry, kept loose since none exist yet
-    counterfactual_pnl: float | None = None
+class NotableFor(BaseModel):
+    asset: Asset
+    pattern_id: str
+    label: ConfidenceLabel
+    dominant_outcome: Outcome | None
 
 
-class EquityPoint(BaseModel):
-    time: datetime
-    expected: float
-    live: float
-    band: float
+class TransitView(BaseModel):
+    event: TransitEvent
+    label: str  # e.g. "MARS → Aries"
+    notable: list[NotableFor]  # playbook patterns this event belongs to that rate weak or better
 
 
-class DriftReport(BaseModel):
-    status: Literal["OK", "WATCH", "DRIFT"]
-    z_score: float
-    scale_down_at: float
-    expected_win_rate: float
-    live_win_rate: float
-    expected_avg_r: float
-    live_avg_r: float
-    expected_max_dd: float
-    live_max_dd: float
-    backtest_trades: int
-    live_trades: int
-    curve: list[EquityPoint]
+class PatternSummary(BaseModel):
+    """A PatternResult without its occurrence list, for tables."""
+
+    pattern_id: str
+    description: str
+    planet: Planet
+    event_type: TransitEventType
+    sign: str | None
+    speed_class: SpeedClass
+    n_events: int
+    horizons: list[PatternHorizonStat]
+    headline_horizon: int | None
+    dominant_outcome: Outcome | None
+    label: ConfidenceLabel
+    score: int
+    summary: str
+    exceptions: int
 
 
-class AstroEvent(BaseModel):
-    id: str
-    timestamp: datetime
-    body: Planet
-    event: str
-    prior_occurrences: int
-    btc_5d_mean_after: float | None = None
+class PlaybookView(BaseModel):
+    asset: Asset
+    generated_at: datetime
+    history_start: datetime
+    history_end: datetime
+    bars: int
+    patterns: list[PatternSummary]
+    sideways: list[SidewaysStateResult]
+
+
+class PlaybookOverview(BaseModel):
+    generated_at: datetime
+    total_tests: int
+    tests_by_family: dict[str, int]
+    runs_so_far: int
+    parameters: dict
+    assets: dict[str, dict]
+    placebo: dict | None  # latest scripts/placebo_check.py summary, if run
+
+
+class RunnerStatus(BaseModel):
+    state: Literal["LIVE", "STALE", "NEVER_RUN"]
+    started_at: datetime | None = None
+    interval_seconds: int | None = None
+    cycles: int = 0
+    in_cycle: bool = False
+    last_cycle_finished_at: datetime | None = None
+    last_cycle_ok: bool | None = None
+    last_error: str | None = None
+    next_cycle_at: datetime | None = None
+
+
+class Components(BaseModel):
+    """Which layers exist yet, so screens can say "not built" instead of pretending."""
+
+    runner: bool
+    playbook: bool
+    strategy: bool
+    journal: bool
+    backtest: bool
+    alerts: bool
 
 
 class FeedStatus(BaseModel):
     asset: Asset
-    source: Source
-    last_bar: datetime
+    sources: list[str]  # venues the stored history was stitched from
+    first_bar: datetime | None
+    last_bar: datetime | None
+    bars: int
+    live_source: PriceSource
+    last_tick_at: datetime | None
 
 
-class AlertLog(BaseModel):
+class LogLine(BaseModel):
     timestamp: datetime
-    level: Literal["INFO", "WARN", "ALERT"]
+    level: str
     message: str
 
 
 class SystemStatus(BaseModel):
-    runner: Literal["LIVE", "STALE", "DOWN"]
-    strategy: str
+    runner: RunnerStatus
+    components: Components
+    strategy: str | None
     timeframe: str
     auto_execution: bool
-    last_eval: datetime | None
-    next_eval: datetime | None
     feeds: list[FeedStatus]
-    alerts: list[AlertLog]
+    log: list[LogLine]  # newest first
     config: dict[str, str]
-
-
-class Tick(BaseModel):
-    asset: Asset
-    price: float
-    timestamp: datetime
-
-
-__all__ = [
-    "Quote",
-    "SuggestionView",
-    "DecisionRequest",
-    "JournalRow",
-    "EquityPoint",
-    "DriftReport",
-    "AstroEvent",
-    "FeedStatus",
-    "AlertLog",
-    "SystemStatus",
-    "Tick",
-    "Signal",
-    "TradeSuggestion",
-]
+    playbook_generated_at: datetime | None

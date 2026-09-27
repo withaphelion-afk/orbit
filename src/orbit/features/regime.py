@@ -15,16 +15,24 @@ Trend logic (kept simple and readable on purpose):
 
 BTC and ETH must agree for a BULL or BEAR call; if they disagree, the
 regime is CHOPPY, since that means the market lacks a clear shared trend.
+
+Silver isn't correlated with crypto, so it has no shared gate. Where a
+screen or the research needs a regime reading for silver, it uses silver's
+own trend under the same rule (`compute_trend_series`), labelled as such.
 """
 
 from __future__ import annotations
 
+import numpy as np
+
 from orbit.core.types import Asset, Candle, FeatureRecord, Regime
+from orbit.features.arrays import rolling_mean
 
 SHORT_WINDOW = 50
 LONG_WINDOW = 200
 
 _REGIME_VALUE = {Regime.BULL: 1.0, Regime.BEAR: -1.0, Regime.CHOPPY: 0.0}
+VALUE_TO_REGIME = {v: k for k, v in _REGIME_VALUE.items()}
 
 
 def simple_moving_average(candles: list[Candle], window: int) -> float:
@@ -58,6 +66,31 @@ def compute_regime(btc_candles: list[Candle], eth_candles: list[Candle]) -> Regi
     return Regime.CHOPPY
 
 
+def trend_values(close: np.ndarray) -> np.ndarray:
+    """Per-day trend as +1 (BULL) / -1 (BEAR) / 0 (CHOPPY); NaN before LONG_WINDOW bars exist."""
+    close = np.asarray(close, dtype=float)
+    s = rolling_mean(close, SHORT_WINDOW)
+    l = rolling_mean(close, LONG_WINDOW)
+    with np.errstate(invalid="ignore"):
+        out = np.where((close > s) & (s > l), 1.0, np.where((close < s) & (s < l), -1.0, 0.0))
+    out[np.isnan(l)] = np.nan
+    return out
+
+
+def regime_gate_by_day(btc_candles: list[Candle], eth_candles: list[Candle]) -> dict:
+    """The shared gate per day ({date: +1/-1/0}): BTC and ETH trends must agree,
+    else CHOPPY (0). Only defined on days where both have LONG_WINDOW of history."""
+    btc = dict(zip((c.timestamp for c in btc_candles), trend_values([c.close for c in btc_candles])))
+    eth = dict(zip((c.timestamp for c in eth_candles), trend_values([c.close for c in eth_candles])))
+    gate = {}
+    for day, b in btc.items():
+        e = eth.get(day)
+        if e is None or np.isnan(b) or np.isnan(e):
+            continue
+        gate[day] = b if b == e else 0.0
+    return gate
+
+
 def compute_regime_series(
     btc_candles: list[Candle], eth_candles: list[Candle], target_asset: Asset
 ) -> list[FeatureRecord]:
@@ -70,31 +103,18 @@ def compute_regime_series(
     """
     if len(btc_candles) <= LONG_WINDOW or len(eth_candles) <= LONG_WINDOW:
         return []
+    gate = regime_gate_by_day(btc_candles, eth_candles)
+    return [FeatureRecord(asset=target_asset, name="regime", date=d, value=float(v)) for d, v in sorted(gate.items())]
 
-    # Candle histories may not start on the same date — align by date, not index.
-    eth_by_date = {c.timestamp: c for c in eth_candles}
 
-    records = []
-    for i in range(LONG_WINDOW, len(btc_candles)):
-        btc_window = btc_candles[: i + 1]
-        today = btc_window[-1]
-
-        if today.timestamp not in eth_by_date:
-            continue
-        eth_today_index = next(
-            j for j, c in enumerate(eth_candles) if c.timestamp == today.timestamp
-        )
-        if eth_today_index < LONG_WINDOW:
-            continue
-        eth_window = eth_candles[: eth_today_index + 1]
-
-        regime = compute_regime(btc_window, eth_window)
-        records.append(
-            FeatureRecord(
-                asset=target_asset,
-                name="regime",
-                date=today.timestamp,
-                value=_REGIME_VALUE[regime],
-            )
-        )
-    return records
+def compute_trend_series(candles: list[Candle]) -> list[FeatureRecord]:
+    """An asset's own trend under the gate's rule, as "trend" FeatureRecords."""
+    if len(candles) <= LONG_WINDOW:
+        return []
+    asset = candles[0].asset
+    trend = trend_values([c.close for c in candles])
+    return [
+        FeatureRecord(asset=asset, name="trend", date=c.timestamp, value=float(v))
+        for c, v in zip(candles, trend)
+        if not np.isnan(v)
+    ]

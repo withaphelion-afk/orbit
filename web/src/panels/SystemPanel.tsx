@@ -1,43 +1,65 @@
 import { useSystem } from '../api/hooks'
-import { Pill } from '../components/bits'
+import type { Components } from '../api/types'
+import { Pill, QueryState } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
 import { useNow } from '../hooks/useLiveFeed'
-import { day, hhmm } from '../lib/format'
+import { ago, day, hhmm, num } from '../lib/format'
 import { useTerminal } from '../state/store'
 
+const COMPONENT_TEXT: Record<keyof Components, string> = {
+  runner: '24/7 runner (data + features every hour)',
+  playbook: 'Transit playbook (scripts/build_playbook.py)',
+  strategy: 'Strategy: trade suggestions',
+  journal: 'Journal: decisions and outcomes',
+  backtest: 'Backtest: expected performance for drift',
+  alerts: 'Alerts: Telegram notifier',
+}
+
 export function SystemPanel({ hidden }: { hidden: boolean }) {
-  const { data: sys, isError, error } = useSystem()
+  const { data: sys, isPending, error } = useSystem()
   const now = useNow(1000)
-  const lastTickAt = useTerminal((s) => s.lastTickAt)
   const connected = useTerminal((s) => s.feedConnected)
 
-  const left = sys ? Math.max(0, Date.parse(sys.next_eval) - now) : 0
-  const h = Math.floor(left / 3_600_000)
-  const m = Math.floor((left % 3_600_000) / 60_000)
-
   return (
-    <Panel code="SYS" title="System" hidden={hidden} meta={<span>RUNNER · FEEDS · ALERTS · CONFIG</span>}>
-      {isError && <p className="load-err">Couldn't reach the runner: {String(error)}</p>}
-      {sys && (
+    <Panel code="SYS" title="System" hidden={hidden} meta={<span>RUNNER · LAYERS · FEEDS · LOG · CONFIG</span>}>
+      {!sys ? (
+        <QueryState isPending={isPending} error={error} what="system status" />
+      ) : (
         <div className="sys">
           <section>
             <span className="lbl">Runner</span>
             <dl className="kv">
-              <dt>Status</dt>
-              <dd className={sys.runner === 'LIVE' ? 'up' : 'down'}>● {sys.runner}</dd>
-              <dt>Strategy</dt>
-              <dd>{sys.strategy} · one active</dd>
-              <dt>Timeframe</dt>
-              <dd>{sys.timeframe.toUpperCase()}</dd>
-              <dt>Last evaluation</dt>
-              <dd>
-                {day(sys.last_eval)} {hhmm(sys.last_eval)}
-              </dd>
-              <dt>Next evaluation</dt>
-              <dd className="hi">
-                in {h}h {String(m).padStart(2, '0')}m
-              </dd>
+              <dt>State</dt>
+              <dd className={sys.runner.state === 'LIVE' ? 'up' : 'down'}>● {sys.runner.state.replace('_', ' ')}</dd>
+              {sys.runner.state === 'NEVER_RUN' ? (
+                <>
+                  <dt>Start it</dt>
+                  <dd className="dim">uv run python -m orbit.runner.loop</dd>
+                </>
+              ) : (
+                <>
+                  <dt>Cycles</dt>
+                  <dd>
+                    {sys.runner.cycles}
+                    {sys.runner.in_cycle ? ' · running now' : ''}
+                  </dd>
+                  <dt>Last cycle</dt>
+                  <dd className={sys.runner.last_cycle_ok === false ? 'down' : ''}>
+                    {sys.runner.last_cycle_finished_at ? `${ago(sys.runner.last_cycle_finished_at, now)} ago · ${sys.runner.last_cycle_ok ? 'ok' : 'failed'}` : '—'}
+                  </dd>
+                  {sys.runner.last_error && (
+                    <>
+                      <dt>Error</dt>
+                      <dd className="down">{sys.runner.last_error}</dd>
+                    </>
+                  )}
+                  <dt>Next cycle</dt>
+                  <dd className="hi">
+                    {sys.runner.next_cycle_at ? (Date.parse(sys.runner.next_cycle_at) > now ? `in ${ago(now - (Date.parse(sys.runner.next_cycle_at) - now), now)}` : 'due') : '—'}
+                  </dd>
+                </>
+              )}
               <dt>Auto-execution</dt>
               <dd>
                 <Pill tone="off">{sys.auto_execution ? 'ON' : 'OFF · LOCKED'}</Pill>
@@ -45,41 +67,64 @@ export function SystemPanel({ hidden }: { hidden: boolean }) {
             </dl>
           </section>
           <section>
-            <span className="lbl">Data feeds · tick stream {connected ? 'connected' : 'disconnected'}</span>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th className="l">Asset</th>
-                  <th className="l">Source</th>
-                  <th>Last bar</th>
-                  <th>Last tick</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sys.feeds.map((f) => (
-                  <tr key={f.asset}>
-                    <td className="l">{ASSET_META[f.asset].label}</td>
-                    <td className="l">
-                      <Pill tone={f.source === 'LIVE' ? 'ok' : 'mock'}>{f.source}</Pill>
-                    </td>
-                    <td>{day(f.last_bar)}</td>
-                    <td className={connected ? 'up' : 'down'}>{lastTickAt ? `${Math.round((now - lastTickAt) / 1000)}s` : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-          <section>
-            <span className="lbl">Alert log · Telegram {sys.config.TELEGRAM_BOT_TOKEN === 'not set' ? 'not configured' : 'configured'}</span>
-            <div className="log">
-              {sys.alerts.slice(0, 12).map((a, i) => (
-                <div key={i}>
-                  <span className="dim">{hhmm(a.timestamp)}</span>
-                  <span className={a.level}>{a.level}</span>
-                  <span>{a.message}</span>
+            <span className="lbl">Layers</span>
+            <dl className="kv">
+              {(Object.keys(COMPONENT_TEXT) as (keyof Components)[]).map((k) => (
+                <div key={k} className="kv-row">
+                  <dt>{COMPONENT_TEXT[k]}</dt>
+                  <dd className={sys.components[k] ? 'up' : 'dim'}>{sys.components[k] ? 'BUILT' : 'NOT BUILT'}</dd>
                 </div>
               ))}
+            </dl>
+          </section>
+          <section className="wide">
+            <span className="lbl">Price feeds · live stream {connected ? 'connected' : 'disconnected'}</span>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th className="l">Asset</th>
+                    <th className="l">Stored history from</th>
+                    <th>First bar</th>
+                    <th>Last bar</th>
+                    <th>Bars</th>
+                    <th className="l">Live</th>
+                    <th>Last tick</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sys.feeds.map((f) => (
+                    <tr key={f.asset}>
+                      <td className="l strong">{ASSET_META[f.asset].label}</td>
+                      <td className="l">{f.sources.join(' → ') || <span className="dim">no history stored</span>}</td>
+                      <td>{f.first_bar ? `${day(f.first_bar)} ${new Date(f.first_bar).getUTCFullYear()}` : '—'}</td>
+                      <td>{f.last_bar ? day(f.last_bar) : '—'}</td>
+                      <td>{num(f.bars, 0)}</td>
+                      <td className="l">
+                        <Pill tone={f.live_source === 'LIVE' ? 'ok' : f.live_source === 'DELAYED' ? 'watch' : 'off'}>{f.live_source}</Pill>
+                      </td>
+                      <td className={f.last_tick_at ? 'up' : 'dim'}>{f.last_tick_at ? `${ago(f.last_tick_at, now)} ago` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </section>
+          <section>
+            <span className="lbl">Runner log · data/logs/runner.log</span>
+            {sys.log.length ? (
+              <div className="log">
+                {sys.log.slice(0, 14).map((l, i) => (
+                  <div key={i}>
+                    <span className="dim">{hhmm(l.timestamp)}</span>
+                    <span className={l.level === 'ERROR' ? 'ALERT' : l.level}>{l.level}</span>
+                    <span>{l.message}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="dim">No log lines yet.</p>
+            )}
           </section>
           <section>
             <span className="lbl">Config · config/settings.py · read-only</span>
@@ -90,6 +135,10 @@ export function SystemPanel({ hidden }: { hidden: boolean }) {
                   <dd className={v === 'not set' ? 'dim' : ''}>{v}</dd>
                 </div>
               ))}
+              <div className="kv-row">
+                <dt>Playbook built</dt>
+                <dd className={sys.playbook_generated_at ? '' : 'dim'}>{sys.playbook_generated_at ? `${day(sys.playbook_generated_at)} ${hhmm(sys.playbook_generated_at)}` : 'never'}</dd>
+              </div>
             </dl>
           </section>
         </div>

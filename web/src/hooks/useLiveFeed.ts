@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { source } from '../api'
+import { api } from '../api'
 import { useTerminal } from '../state/store'
 
-/** Subscribes the store to the source's tick stream for the life of the app. */
+/** Subscribes the store to the API's live price stream for the life of the app. */
 export function useLiveFeed() {
   useEffect(() => {
     const { applyTick, setFeedConnected } = useTerminal.getState()
-    return source.subscribeTicks((t) => applyTick(t.asset, t.price), setFeedConnected)
+    return api.subscribeTicks((t) => applyTick(t.asset, t.price, t.source), setFeedConnected)
   }, [])
 }
 

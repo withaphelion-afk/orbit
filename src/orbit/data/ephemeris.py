@@ -20,6 +20,7 @@ from skyfield.api import Loader
 
 from orbit.config.settings import DATA_DIR
 from orbit.core.types import EphemerisSnapshot, Planet
+from orbit.data.dates import utc_day
 
 # Skyfield downloads its ephemeris kernel (de421.bsp, ~17MB, NASA JPL data)
 # once and reuses it after that. It's a generated cache file, not source —
@@ -104,6 +105,9 @@ def backfill_planet(planet: Planet, start_date: datetime, days: int) -> list[Eph
     eph, ts = _get_ephemeris()
     earth = eph["earth"]
     body = eph[BODY_NAMES[planet]]
+    # Positions are computed at 00:00 UTC, so date each snapshot at midnight UTC
+    # too; that is what prices and features are keyed by (see data/dates.py).
+    start_date = utc_day(start_date)
 
     # Requesting one extra day *before* the range lets us compute retrograde
     # for the first day too, via the same backward-difference as compute_snapshot.

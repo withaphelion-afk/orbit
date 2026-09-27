@@ -4,17 +4,36 @@ position relative to the 50/200-day averages, and rolling volatility.
 Features are stored as ratios/normalized values rather than raw prices,
 since a feature store's whole point is letting different assets (BTC at
 $80k, silver at $65) be compared and combined on the same scale.
+
+Computed as whole-array rolling windows (see features/arrays.py) rather than
+per-day Python loops, so full multi-year histories stay fast.
 """
 
 from __future__ import annotations
 
-import statistics
+import numpy as np
 
 from orbit.core.types import Candle, FeatureRecord
+from orbit.features.arrays import pct_change, rolling_mean, rolling_std
 
 SHORT_WINDOW = 50
 LONG_WINDOW = 200
 VOLATILITY_WINDOW = 20
+
+FEATURE_NAMES = ("return_1d", "close_vs_sma50", "close_vs_sma200", "volatility_20d")
+
+
+def technical_arrays(close: np.ndarray) -> dict[str, np.ndarray]:
+    """Every technical feature for every day, NaN where history is too short."""
+    returns = pct_change(close)
+    return {
+        "return_1d": returns,
+        "close_vs_sma50": close / rolling_mean(close, SHORT_WINDOW) - 1,
+        "close_vs_sma200": close / rolling_mean(close, LONG_WINDOW) - 1,
+        # Population std of the daily returns inside a 20-bar window (19 of them),
+        # matching the original per-day definition.
+        "volatility_20d": rolling_std(returns, VOLATILITY_WINDOW - 1),
+    }
 
 
 def compute_technical_features(candles: list[Candle]) -> list[FeatureRecord]:
@@ -25,40 +44,9 @@ def compute_technical_features(candles: list[Candle]) -> list[FeatureRecord]:
         return []
 
     asset = candles[0].asset
+    arrays = technical_arrays(np.array([c.close for c in candles]))
     records = []
-
     for i in range(LONG_WINDOW, len(candles)):
-        window = candles[i - LONG_WINDOW : i + 1]  # includes today, oldest-first
-        today = window[-1]
-        yesterday = window[-2]
-
-        sma_short = sum(c.close for c in window[-SHORT_WINDOW:]) / SHORT_WINDOW
-        sma_long = sum(c.close for c in window) / LONG_WINDOW
-        daily_return = (today.close / yesterday.close) - 1
-
-        vol_window = window[-VOLATILITY_WINDOW:]
-        returns = [
-            (vol_window[j].close / vol_window[j - 1].close) - 1
-            for j in range(1, len(vol_window))
-        ]
-        volatility_20d = statistics.pstdev(returns)
-
-        records.extend(
-            [
-                FeatureRecord(asset=asset, name="return_1d", date=today.timestamp, value=daily_return),
-                FeatureRecord(
-                    asset=asset,
-                    name="close_vs_sma50",
-                    date=today.timestamp,
-                    value=(today.close / sma_short) - 1,
-                ),
-                FeatureRecord(
-                    asset=asset,
-                    name="close_vs_sma200",
-                    date=today.timestamp,
-                    value=(today.close / sma_long) - 1,
-                ),
-                FeatureRecord(asset=asset, name="volatility_20d", date=today.timestamp, value=volatility_20d),
-            ]
-        )
+        for name in FEATURE_NAMES:
+            records.append(FeatureRecord(asset=asset, name=name, date=candles[i].timestamp, value=float(arrays[name][i])))
     return records

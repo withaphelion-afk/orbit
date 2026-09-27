@@ -33,7 +33,7 @@ def save_candles(candles: list[Candle], timeframe: str) -> Path:
 
     with path.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
+        writer.writerow(["timestamp", "open", "high", "low", "close", "volume", "source"])
         for candle in candles:
             writer.writerow(
                 [
@@ -43,6 +43,7 @@ def save_candles(candles: list[Candle], timeframe: str) -> Path:
                     candle.low,
                     candle.close,
                     candle.volume,
+                    candle.source,
                 ]
             )
     return path
@@ -66,6 +67,7 @@ def load_candles(asset: Asset, timeframe: str) -> list[Candle]:
                     low=float(row["low"]),
                     close=float(row["close"]),
                     volume=float(row["volume"]),
+                    source=row.get("source") or "",  # files written before stitching have no source column
                 )
             )
     return candles

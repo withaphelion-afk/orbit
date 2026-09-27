@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import { source } from '../api'
 import { useSystem } from '../api/hooks'
 import { COMMAND_INPUT_ID } from '../hooks/useTerminalKeys'
 import { useNow } from '../hooks/useLiveFeed'
@@ -23,7 +22,7 @@ export function CommandBar() {
   const now = useNow(500)
   const lastTickAt = useTerminal((s) => s.lastTickAt)
   const connected = useTerminal((s) => s.feedConnected)
-  const { data: sys } = useSystem()
+  const { data: sys, isError: apiDown } = useSystem()
   const ghost = complete(value)
 
   const submit = () => {
@@ -52,7 +51,7 @@ export function CommandBar() {
   }
 
   const age = lastTickAt ? Math.round((now - lastTickAt) / 1000) : null
-  const runner = sys?.runner ?? 'DOWN'
+  const runner = apiDown ? 'API DOWN' : sys ? sys.runner.state.replace('_', ' ') : '…'
   const d = new Date(now)
 
   return (
@@ -91,15 +90,15 @@ export function CommandBar() {
           FEED <b className={connected ? '' : 'down'}>{connected ? (age === null ? '—' : `${age}s`) : 'OFF'}</b>
         </span>
         <span className="opt">
-          STRATEGY <b>{sys?.strategy ?? '—'}</b>
+          STRATEGY <b className={sys && !sys.strategy ? 'dim' : ''}>{sys ? (sys.strategy ?? 'NOT BUILT') : '—'}</b>
         </span>
         <span>
           AUTO-EXEC <Pill tone="off">{sys?.auto_execution ? 'ON' : 'OFF'}</Pill>
         </span>
-        {source.kind === 'mock' && (
+        {apiDown && (
           <span>
-            <Pill tone="mock" title="Watchlist, suggestions, journal and stats are sample data. The LIVE chart is real TradingView data.">
-              MOCK DATA
+            <Pill tone="drift" title="The Orbit API isn't answering. Start it with: uv run python -m orbit.api">
+              API OFFLINE
             </Pill>
           </span>
         )}

@@ -10,7 +10,7 @@ from orbit.config.settings import TIMEFRAME
 from orbit.core.types import Asset, Planet
 from orbit.data.storage import load_candles, load_ephemeris_snapshots
 from orbit.features.astro import ephemeris_to_features
-from orbit.features.regime import compute_regime_series
+from orbit.features.regime import compute_regime_series, compute_trend_series
 from orbit.features.store import FEATURES_DIR, save_features
 from orbit.features.technical import compute_technical_features
 
@@ -31,7 +31,7 @@ def compute_all_features() -> None:
         candles = load_candles(asset, TIMEFRAME)
         if not candles:
             continue
-        records = compute_technical_features(candles)
+        records = compute_technical_features(candles) + compute_trend_series(candles)
         if records:
             save_features(records)
 

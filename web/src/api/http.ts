@@ -1,37 +1,91 @@
 /**
- * Talks to the Orbit backend over the contract in web/README.md.
- * Same-origin by default: in dev, Vite proxies /api and /ws to the backend.
+ * The Orbit API client. Same-origin by default: in dev, Vite proxies /api and
+ * /ws to the backend (see vite.config.ts); VITE_ORBIT_API_BASE points it
+ * elsewhere.
  */
-import type { Asset, DecisionRequest, OrbitSource, Tick } from './types'
+import type {
+  Asset,
+  Candle,
+  DecisionRequest,
+  DriftReport,
+  JournalRow,
+  PatternResult,
+  PlaybookOverview,
+  PlaybookView,
+  Quote,
+  RegimeReading,
+  Signal,
+  SkyPosition,
+  SuggestionView,
+  SystemStatus,
+  Tick,
+  TransitView,
+} from './types'
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: { Accept: 'application/json' } })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} on GET ${path}`)
-  return res.json() as Promise<T>
+/** An API error with the server's own explanation (FastAPI's `detail`). */
+export class ApiError extends Error {
+  readonly status: number
+  constructor(status: number, detail: string) {
+    super(detail)
+    this.status = status
+  }
 }
 
-export function createHttpSource(base = ''): OrbitSource {
-  const url = (p: string) => base + p
+async function parse<T>(res: Response, what: string): Promise<T> {
+  if (res.ok) return res.json() as Promise<T>
+  let detail = `${res.status} ${res.statusText} on ${what}`
+  try {
+    const body = await res.json()
+    if (body && typeof body.detail === 'string') detail = body.detail
+  } catch {
+    // not JSON; keep the status line
+  }
+  throw new ApiError(res.status, detail)
+}
+
+export function createApi(base = '', fetcher: typeof fetch = (...a) => fetch(...a)) {
+  const get = async <T>(path: string): Promise<T> => {
+    let res: Response
+    try {
+      res = await fetcher(base + path, { headers: { Accept: 'application/json' } })
+    } catch {
+      throw new ApiError(0, 'The Orbit API is unreachable. Start it with: uv run python -m orbit.api')
+    }
+    return parse<T>(res, `GET ${path}`)
+  }
+  const enc = encodeURIComponent
+
   return {
-    kind: 'http',
-    quotes: () => get(url('/api/quotes')),
-    candles: (a: Asset) => get(url(`/api/candles/${a}`)),
-    signals: (a: Asset) => get(url(`/api/signals/${a}`)),
-    suggestions: () => get(url('/api/suggestions')),
-    async decide(id: string, req: DecisionRequest) {
-      const res = await fetch(url(`/api/suggestions/${encodeURIComponent(id)}/decision`), {
+    quotes: () => get<Quote[]>('/api/quotes'),
+    candles: (a: Asset) => get<Candle[]>(`/api/candles/${a}`),
+    signals: (a: Asset) => get<Signal[]>(`/api/signals/${a}`),
+    regime: () => get<RegimeReading[]>('/api/regime'),
+    sky: () => get<SkyPosition[]>('/api/sky'),
+    transits: (from?: string, to?: string) => {
+      const q = new URLSearchParams()
+      if (from) q.set('from', from)
+      if (to) q.set('to', to)
+      const qs = q.toString()
+      return get<TransitView[]>(`/api/transits${qs ? `?${qs}` : ''}`)
+    },
+    playbookOverview: () => get<PlaybookOverview>('/api/playbook'),
+    playbook: (a: Asset) => get<PlaybookView>(`/api/playbook/${a}`),
+    pattern: (a: Asset, id: string) => get<PatternResult>(`/api/playbook/${a}/patterns/${enc(id)}`),
+    suggestions: () => get<SuggestionView[]>('/api/suggestions'),
+    journal: () => get<JournalRow[]>('/api/journal'),
+    drift: () => get<DriftReport>('/api/drift'),
+    system: () => get<SystemStatus>('/api/system'),
+    async decide(id: string, req: DecisionRequest): Promise<JournalRow> {
+      const res = await fetcher(`${base}/api/suggestions/${enc(id)}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(req),
       })
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
-      return res.json()
+      return parse<JournalRow>(res, 'POST decision')
     },
-    journal: () => get(url('/api/journal')),
-    drift: () => get(url('/api/drift')),
-    astro: () => get(url('/api/astro')),
-    system: () => get(url('/api/system')),
-    subscribeTicks(onTick, onStatus) {
+
+    /** Streams live prices. Reconnects with backoff. Returns an unsubscribe function. */
+    subscribeTicks(onTick: (t: Tick) => void, onStatus?: (connected: boolean) => void): () => void {
       let ws: WebSocket | undefined
       let retry: ReturnType<typeof setTimeout> | undefined
       let delay = 1000
@@ -67,3 +121,5 @@ export function createHttpSource(base = ''): OrbitSource {
     },
   }
 }
+
+export type OrbitApi = ReturnType<typeof createApi>

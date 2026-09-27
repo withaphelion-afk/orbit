@@ -1,0 +1,134 @@
+"""Read-only access to everything the scripts and runner have stored, cached
+until the underlying file changes.
+
+The API never fetches history or computes research itself; that's the
+runner's and the playbook job's work. It only reads their output, so a slow
+request can never hold up (or be held up by) the heavy jobs.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+import numpy as np
+
+from orbit.config.settings import DATA_DIR, TIMEFRAME
+from orbit.core.types import Asset, AssetPlaybook, Candle
+from orbit.data.dates import today_utc
+from orbit.data.history import REPORT_PATH
+from orbit.data.storage import _csv_path, load_candles
+from orbit.features.regime import VALUE_TO_REGIME, regime_gate_by_day, trend_values
+from orbit.analysis.playbook import ANALYSIS_DIR
+from orbit.analysis.series import load_planet_series
+from orbit.analysis.transit_events import detect_all
+
+LOG_PATH = DATA_DIR / "logs" / "runner.log"
+EPHEMERIS_DIR = DATA_DIR / "ephemeris"
+_LOG_LINE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ \[(\w+)\] (.*)$")
+
+_cache: dict[str, tuple[float, Any]] = {}
+
+
+def _mtime(paths: list[Path]) -> float:
+    return max((p.stat().st_mtime for p in paths if p.exists()), default=0.0)
+
+
+def _cached(key: str, paths: list[Path], build: Callable[[], Any]) -> Any:
+    stamp = _mtime(paths)
+    hit = _cache.get(key)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    value = build()
+    _cache[key] = (stamp, value)
+    return value
+
+
+def candles(asset: Asset) -> list[Candle]:
+    return _cached(f"candles:{asset.value}", [_csv_path(asset, TIMEFRAME)], lambda: load_candles(asset, TIMEFRAME))
+
+
+def completed(asset: Asset) -> list[Candle]:
+    """Stored bars excluding today's still-forming one."""
+    today = today_utc()
+    return [c for c in candles(asset) if c.timestamp < today]
+
+
+def regime_by_day(asset: Asset) -> tuple[dict[datetime, str], str]:
+    """{day: BULL/BEAR/CHOPPY} and its scope. Crypto reads the shared BTC/ETH gate;
+    silver has no gate, so it reads its own trend under the same rule."""
+    if asset == Asset.SILVER:
+        def build():
+            bars = completed(Asset.SILVER)
+            values = trend_values([c.close for c in bars])
+            return {c.timestamp: VALUE_TO_REGIME[v].value for c, v in zip(bars, values) if not np.isnan(v)}
+
+        return _cached("trend:SILVER", [_csv_path(Asset.SILVER, TIMEFRAME)], build), "OWN"
+
+    def build_gate():
+        gate = regime_gate_by_day(completed(Asset.BTC), completed(Asset.ETH))
+        return {d: VALUE_TO_REGIME[v].value for d, v in sorted(gate.items())}
+
+    return _cached("gate", [_csv_path(Asset.BTC, TIMEFRAME), _csv_path(Asset.ETH, TIMEFRAME)], build_gate), "SHARED"
+
+
+def history_report() -> dict:
+    return _cached("report", [REPORT_PATH], lambda: json.loads(REPORT_PATH.read_text(encoding="utf-8")) if REPORT_PATH.exists() else {})
+
+
+def _ephemeris_paths() -> list[Path]:
+    return list(EPHEMERIS_DIR.glob("*.csv"))
+
+
+def planets():
+    return _cached("planets", _ephemeris_paths(), load_planet_series)
+
+
+def transit_events():
+    return _cached("events", _ephemeris_paths(), lambda: detect_all(planets()))
+
+
+def playbook(asset: Asset) -> AssetPlaybook | None:
+    path = ANALYSIS_DIR / f"{asset.value}.json"
+    return _cached(
+        f"playbook:{asset.value}",
+        [path],
+        lambda: AssetPlaybook.model_validate_json(path.read_text(encoding="utf-8")) if path.exists() else None,
+    )
+
+
+def playbook_meta() -> dict | None:
+    path = ANALYSIS_DIR / "meta.json"
+    return _cached("meta", [path], lambda: json.loads(path.read_text(encoding="utf-8")) if path.exists() else None)
+
+
+def placebo() -> dict | None:
+    path = ANALYSIS_DIR / "placebo.json"
+
+    def build():
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {k: v for k, v in data.items() if k != "runs"}
+
+    return _cached("placebo", [path], build)
+
+
+def runner_log(limit: int = 40) -> list[tuple[datetime, str, str]]:
+    """The last `limit` log lines, newest first (tracebacks and blank lines skipped)."""
+    if not LOG_PATH.exists():
+        return []
+    with LOG_PATH.open(encoding="utf-8", errors="replace") as f:
+        tail = f.readlines()[-400:]
+    out = []
+    for line in reversed(tail):
+        m = _LOG_LINE.match(line.rstrip())
+        if m:
+            ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc)
+            out.append((ts, m.group(2), m.group(3)))
+            if len(out) >= limit:
+                break
+    return out

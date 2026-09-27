@@ -34,7 +34,9 @@ export function Sparkline({ values, height = 34 }: { values: number[]; height?: 
   )
 }
 
-export function Pill({ tone, children, title }: { tone: 'off' | 'mock' | 'ok' | 'watch' | 'drift' | 'astro'; children: ReactNode; title?: string }) {
+export type PillTone = 'off' | 'ok' | 'watch' | 'drift' | 'astro'
+
+export function Pill({ tone, children, title }: { tone: PillTone; children: ReactNode; title?: string }) {
   return (
     <em className={`pill ${tone}`} title={title}>
       {children}
@@ -61,4 +63,30 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
       {children}
     </div>
   )
+}
+
+/** Shown for a layer the backend doesn't have yet, so the screen says why it's empty. */
+export function NotBuilt({ layer, children }: { layer: string; children: ReactNode }) {
+  return (
+    <div className="empty not-built">
+      <b>{layer} NOT BUILT YET</b>
+      {children}
+      <span className="dim">This screen fills in by itself once the backend reports the layer as built.</span>
+    </div>
+  )
+}
+
+/** Loading and error states for a query, with the server's own explanation when it gives one. */
+export function QueryState({ isPending, error, what }: { isPending: boolean; error: unknown; what: string }) {
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return (
+      <div className="empty">
+        <b className="down">COULDN'T LOAD {what.toUpperCase()}</b>
+        <span>{message}</span>
+      </div>
+    )
+  }
+  if (isPending) return <p className="loading">Loading {what}…</p>
+  return null
 }
