@@ -37,3 +37,27 @@ export function useDecide() {
     },
   })
 }
+
+/** The active analysis run; polled quickly while one is going. */
+export function useCurrentRun() {
+  return useQuery({
+    queryKey: ['run', 'current'],
+    queryFn: api.currentRun,
+    refetchInterval: (q) => (q.state.data ? 2000 : 15_000),
+  })
+}
+export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: api.runs, refetchInterval: 30_000 })
+export const useSchedule = () => useQuery({ queryKey: ['schedule'], queryFn: api.schedule, refetchInterval: 60_000 })
+export const useIntraday = (a: Asset, at: string | null, beforeHours: number, afterHours: number) =>
+  useQuery({ queryKey: ['intraday', a, at, beforeHours, afterHours], queryFn: () => api.intraday(a, at!, beforeHours, afterHours), enabled: !!at })
+
+export function useStartRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (opts: { placebo: boolean; refresh: boolean }) => api.startRun(opts),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['run'] })
+      qc.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
