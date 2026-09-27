@@ -69,7 +69,17 @@ This README is the single source of truth for planning — update it in place wh
 - `features/regime.py` — the regime gate (BTC+ETH 50/200-day SMA trend, both must agree for BULL/BEAR or it's CHOPPY) plus `compute_regime_series` to log its full history, not just a live reading — done.
 - `features/astro.py` — encodes ephemeris sign/retrograde as numeric features per tracked asset — done.
 - `scripts/compute_features.py` — runs the full pipeline (technical + regime + astro) into the feature store — done, verified against real data (BTC/ETH/SOL/silver, 60 years of ephemeris).
-- Per-asset entry scoring, the actual strategy rules, backtesting, the journal, and the 24/7 runner — not started yet.
+- `data/pipeline.py` + `features/pipeline.py` — the fetch and feature-computation steps, refactored into reusable functions so scripts and the runner share the same logic.
+- `runner/loop.py` — the 24/7 loop: on an interval, fetches fresh data, recomputes features, and logs the current regime. Wrapped so a single failed cycle (network blip, rate limit) is logged and retried, never crashes the process — done, verified against real data end to end.
+- Per-asset entry scoring, the actual strategy rules, backtesting, and the journal — not started yet.
+
+### Running the 24/7 runner
+
+```bash
+uv run python -m orbit.runner.loop
+```
+
+Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Logs go to console and `data/logs/runner.log`. This process needs to actually stay running somewhere — for now that's a terminal you leave open; the "VPS vs home server" open decision below is about making that permanent.
 
 ## Full plan
 
@@ -116,7 +126,7 @@ Notes from researching how professional quant systems structure this, so we buil
 | 2. Data pipeline | Price data + ephemeris data, stored locally | Done |
 | 3. Backtest engine | Walk-forward validation; test astro factors for significance | Feature store built (technical + regime + astro); backtest engine itself not started |
 | 4. Trade journal + scorecard | Logging schema for every signal and decision | Not started |
-| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Not started |
+| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Loop + logging built; alerting not started; not yet deployed to run unattended |
 | 6. Feedback loop | Review cadence to correct/reweight the scorecard | Not started |
 | 7. Auto-execution | Enabled later, once confidence is earned | Not started |
 
