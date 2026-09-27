@@ -134,6 +134,22 @@ uv run python -m orbit.runner.loop
 
 Runs forever, re-checking every hour by default (`RUNNER_INTERVAL_SECONDS` in `config/settings.py` — daily candles don't produce new data more often than that anyway). Logs go to console and `data/logs/runner.log`. This process needs to actually stay running somewhere — for now that's a terminal you leave open; the "VPS vs home server" open decision below is about making that permanent.
 
+### Running the web API (backend for the React frontend)
+
+```bash
+uv run python -m orbit.api        # or, while developing: uv run uvicorn orbit.api.app:app --reload
+```
+
+Serves on `http://127.0.0.1:8000` by default, matching what `web/vite.config.ts` proxies `/api` and `/ws` to. Run `scripts/fetch_data.py`, `scripts/fetch_ephemeris.py` and `scripts/build_playbook.py` first (see Getting started) so there's real data for it to serve. The web terminal always reads this API; there is no mock mode.
+
+It only reads what the scripts and runner have stored; it never fetches history or runs research itself. The one exception is live prices: a background task polls Binance and Yahoo (for silver) and pushes each tick over `/ws`.
+
+**Layers that don't exist yet answer honestly:**
+- `/api/suggestions` and `/api/journal` return `[]`.
+- A decision POST returns `501`.
+- `/api/drift` returns `404`, with an explanation.
+- `/api/system` lists which layers are built, so the UI can say "not built yet" rather than show empty numbers.
+
 ## Full plan
 
 ### Strategy structure for crypto (BTC/ETH/SOL)
