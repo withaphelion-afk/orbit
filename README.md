@@ -4,13 +4,7 @@ A 24/7 systematic trading assistant for **BTC, ETH, SOL, and Silver**. It watche
 
 This project doubles as a learning project. Every module is built to be understandable, not just functional — comments and docs explain *why*, not just *what*.
 
-**Quick start on any machine (Windows, macOS, Linux):** install [uv](https://docs.astral.sh/uv/) and [Node 20.19+](https://nodejs.org), clone, then
-
-```bash
-python scripts/start_orbit.py     # or double-click start_orbit.cmd (Windows) / run ./start_orbit.sh (macOS, Linux)
-```
-
-It sets up the environment, builds the web terminal, starts the API and the 24/7 runner in the background, and opens http://127.0.0.1:8000. See [Running Orbit](#running-orbit-on-your-machine) for stop, status and start-at-login.
+**To install and run it on any machine (Windows, macOS, Linux), see [Install and run on any machine](#install-and-run-on-any-machine).** It takes three tools and one command.
 
 ## Core ideas
 
@@ -47,28 +41,78 @@ orbit/
 
 Only `alerts/` is still an empty stub — see Status below for what's built.
 
-## Getting started
+## Install and run on any machine
+
+### 1. Install three tools (once)
+
+| Tool | Why | Get it |
+| --- | --- | --- |
+| git | To clone Orbit and share data through GitHub | [git-scm.com](https://git-scm.com/downloads). Log in to GitHub once (for example `gh auth login`) so this machine can also send its data. |
+| uv | Installs Python 3.11+ and every package Orbit needs | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
+| Node.js 20.19+ | Builds the web terminal | [nodejs.org](https://nodejs.org) |
+
+### 2. Get Orbit and start it
 
 ```bash
 git clone https://github.com/withaphelion-afk/orbit.git
 cd orbit
-uv sync --extra dev
-uv run pytest -q
+uv run python scripts/start_orbit.py
 ```
 
-That installs dependencies into a local `.venv` and confirms the test suite passes. Copy `.env.example` to `.env` and fill in secrets (e.g. Telegram bot token) only when you actually need them — nothing requires secrets yet.
+Or double-click `start_orbit.cmd` on Windows, or run `./start_orbit.sh` on macOS/Linux. No API keys or accounts are needed.
 
-Then build the local data once. None of these steps needs an API key (the runner keeps it all current afterwards):
+### 3. What happens the first time
+
+1. It creates the Python environment (`.venv`) and builds the web terminal: a few minutes.
+2. It downloads the shared data from GitHub: price histories, the silver history and NASA's ephemeris (about 26 MB). Nothing has to be re-downloaded from the exchanges.
+3. It starts the API and the 24/7 runner in the background and opens http://127.0.0.1:8000.
+4. The runner's first cycle fetches the latest prices and builds the Vedic sky and features: a few minutes.
+5. The first analysis run builds the playbook, backtest, feedback loop and model: about 15–20 minutes. Until it finishes, those screens say they haven't been generated yet.
+
+After that the runner keeps everything current by itself: prices every hour, the analysis daily at 00:30 UTC, and a data sync with GitHub once a day.
+
+### 4. Every day
+
+| To | Run |
+| --- | --- |
+| Start Orbit | `uv run python scripts/start_orbit.py` (safe to run when it's already running) |
+| Check it | `uv run python scripts/start_orbit.py --status` |
+| Stop it | `uv run python scripts/stop_orbit.py` |
+| Start it at login | `uv run python scripts/autostart.py` (`--remove` to undo) |
+| Update to the latest code | `git pull`, then stop and start |
+
+### If something doesn't work
+
+| What you see | What to do |
+| --- | --- |
+| `No .venv yet. Install uv` | Install uv (step 1) and run the start command again. |
+| `Node.js/npm not found` | Install Node.js 20.19+. Everything else runs meanwhile, just without the web terminal. |
+| `--status` says the runner is running, but SYS (F8) shows it NEVER_RUN or STALE | A leftover file points at another program. Stop Orbit, delete `data/runner_status.json` and the `data/run` folder, and start again. |
+| The runner log shows price errors from Binance (HTTP 451 or 403) | Binance blocks some countries (the US, for example). This machine still gets every price from GitHub through the daily sync, from a machine that can reach Binance. |
+| `Data sync: ... Couldn't send this machine's data` | This machine can read from GitHub but not write to it (not logged in, or no access). It still receives everything. Log in to GitHub to send too. |
+| Port 8000 is already in use | Put `ORBIT_API_PORT=8001` (or any free port) in a `.env` file in the orbit folder. |
+| Windows blocks Python packages (Smart App Control) | Orbit avoids the affected packages. If a start still fails, send the error. |
+
+Logs are in `data/logs/` (`api.out`, `runner.out`, `silver.out`, `runner.log`). When asking for help, send the output of `uv run python scripts/start_orbit.py --status` and the last lines of `data/logs/runner.out`.
+
+### For developers
 
 ```bash
-uv run python scripts/fetch_data.py        # full daily + hourly history; the first run takes ~8 min, later runs fetch only new bars
+uv sync --extra dev
+uv run pytest -q          # the tests never touch GitHub (tests/conftest.py)
+cd web && npm install && npm run dev   # the web terminal with hot reload, on http://localhost:5173
+```
+
+Copy `.env.example` to `.env` for settings (none are required). The data scripts can still be run by hand, though `start_orbit` and the runner make them unnecessary:
+
+```bash
+uv run python scripts/fetch_data.py        # full daily + hourly history (~8 min from scratch; the shared data makes it quick)
 uv run python scripts/fetch_ephemeris.py   # the Vedic sky 2000-2028 and its ~33,000 events (~30 s)
 uv run python scripts/compute_features.py  # technical, regime and Vedic features
 uv run python scripts/build_playbook.py    # Vedic playbook, daily + hourly (~5 min); or press RUN ANALYSIS in the web terminal
-uv run python scripts/placebo_check.py     # optional sanity check of the playbook method (~40 min)
+uv run python scripts/placebo_check.py     # sanity check of the playbook method (~40 min)
+uv run python scripts/backfill_silver.py   # the spot-silver download (already shared on GitHub; only needed without it)
 ```
-
-`scripts/start_orbit.py` then runs everything else, including the one-time spot-silver download from Dukascopy (throttled: it can take hours, and resumes where it stopped).
 
 **Note for Windows machines with Smart App Control / Application Control:** it blocks pandas' compiled files, so nothing in `src/` imports pandas; the maths uses numpy, which loads fine. The launcher uses only the standard library for the same reason.
 
@@ -82,7 +126,6 @@ Orbit runs on whichever PC is on; there is no server. Each machine keeps its own
 | `python scripts/start_orbit.py --status` | What's running, whether the web build and silver download are done, whether autostart is on |
 | `python scripts/stop_orbit.py` | Stops the API, runner and silver download. An analysis run in progress finishes on its own. |
 | `python scripts/autostart.py` | Start Orbit at login (per user, no admin): a `.cmd` in the Windows Startup folder, a macOS LaunchAgent, or a Linux XDG autostart entry. `--remove` undoes it. |
-
 | `python scripts/sync_data.py` | Syncs the shared data with GitHub now (`--pull` to only take, `--status` to see the last sync). start_orbit and the runner do this on their own. |
 
 Double-click shortcuts: `start_orbit.cmd` on Windows, `./start_orbit.sh` on macOS/Linux. Output goes to `data/logs/{api,runner,silver}.out`; the runner's own log is `data/logs/runner.log`. Use the `.venv` Python (`.venv/Scripts/python` on Windows, `.venv/bin/python` elsewhere) or `uv run python` for the commands above; the launcher itself works with any Python 3.11+.
