@@ -82,6 +82,13 @@ def _follow(asset: Asset, series: PriceSeries, rec: SuggestionRecord, entry_over
 def refresh(series_by_asset: dict[Asset, PriceSeries] | None = None) -> dict[str, int]:
     """Create new suggestions, expire stale ones, resolve outcomes. Returns counts."""
     series_by_asset = series_by_asset or {a: load_price_series(a) for a in ASSETS}
+    signals = {a: strat.find_signals(s) for a, s in series_by_asset.items() if len(s) >= 300}
+    with store.locked():
+        counts = _refresh_locked(series_by_asset, signals)
+    return counts
+
+
+def _refresh_locked(series_by_asset: dict[Asset, PriceSeries], signals: dict) -> dict[str, int]:
     records = store.load()
     known = {r.id for r in records}
     counts = {"new": 0, "expired": 0, "resolved": 0}
@@ -89,7 +96,7 @@ def refresh(series_by_asset: dict[Asset, PriceSeries] | None = None) -> dict[str
         if len(series) < 300:
             continue
         last = len(series) - 1
-        for s in strat.find_signals(series):
+        for s in signals[asset]:
             if s.signal_index != last:
                 continue
             rec = _suggestion(asset, series, s)
@@ -117,16 +124,17 @@ def refresh(series_by_asset: dict[Asset, PriceSeries] | None = None) -> dict[str
 
 
 def decide(sid: str, decision: Decision, notes: str, entry: float | None, stop: float | None, target: float | None) -> SuggestionRecord:
-    records = store.load()
-    rec = store.get(records, sid)
-    if rec is None:
-        raise KeyError(sid)
-    if rec.status != "pending":
-        raise ValueError(f"suggestion {sid} is already {rec.status}")
-    s = rec.suggestion
-    rec.status, rec.decision, rec.decided_at, rec.notes = "decided", decision, datetime.now(timezone.utc), notes
-    rec.acted_entry = entry if decision == Decision.MODIFIED and entry else s.entry_price
-    rec.acted_stop = stop if decision == Decision.MODIFIED and stop else s.stop_loss
-    rec.acted_target = target if decision == Decision.MODIFIED and target else s.take_profit
-    store.save(records)
+    with store.locked():
+        records = store.load()
+        rec = store.get(records, sid)
+        if rec is None:
+            raise KeyError(sid)
+        if rec.status != "pending":
+            raise ValueError(f"suggestion {sid} is already {rec.status}")
+        s = rec.suggestion
+        rec.status, rec.decision, rec.decided_at, rec.notes = "decided", decision, datetime.now(timezone.utc), notes
+        rec.acted_entry = entry if decision == Decision.MODIFIED and entry else s.entry_price
+        rec.acted_stop = stop if decision == Decision.MODIFIED and stop else s.stop_loss
+        rec.acted_target = target if decision == Decision.MODIFIED and target else s.take_profit
+        store.save(records)
     return rec

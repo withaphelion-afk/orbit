@@ -2,7 +2,9 @@
 
 One record per suggestion, in data/journal/suggestions.json. This file can't be
 regenerated from market data (your decisions and notes live here), so writes
-are atomic and a dated copy is kept in data/journal/backups/ once a day.
+are atomic, a dated copy is kept in data/journal/backups/ once a day, and
+every read-modify-write (the runner's refresh, a decision from the API, the
+data sync) happens inside `locked()` so none of them overwrites another.
 
 Every suggestion is followed to its outcome automatically with the strategy's
 own levels ("paper" outcome, used by the drift check and the feedback loop),
@@ -13,8 +15,8 @@ with the levels you acted on; that result is the journal's outcome_pnl.
 from __future__ import annotations
 
 import json
-import os
 import shutil
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -22,6 +24,7 @@ from pydantic import BaseModel
 
 from orbit.config.settings import DATA_DIR
 from orbit.core.types import Decision, JournalEntry, TradeSuggestion
+from orbit.fsutil import atomic_write_text, file_lock
 
 JOURNAL_DIR = DATA_DIR / "journal"
 PATH = JOURNAL_DIR / "suggestions.json"
@@ -55,6 +58,9 @@ class SuggestionRecord(BaseModel):
     acted_target: float | None = None
     paper: Outcome | None = None  # the strategy's own levels
     acted: Outcome | None = None  # your levels, if you took it
+    # If someone else decided the same suggestion on another machine later (the data sync keeps the first
+    # decision): theirs, with its levels and outcome, so no decision or trade is ever lost.
+    other_decisions: list[dict] = []
 
     def journal_entry(self) -> JournalEntry:
         s = self.suggestion
@@ -70,11 +76,15 @@ def load() -> list[SuggestionRecord]:
     return [SuggestionRecord.model_validate(r) for r in json.loads(PATH.read_text(encoding="utf-8"))]
 
 
+@contextmanager
+def locked():
+    """Hold the journal lock for a load -> change -> save sequence."""
+    with file_lock(PATH.with_name("suggestions.lock")):
+        yield
+
+
 def save(records: list[SuggestionRecord]) -> None:
-    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps([r.model_dump(mode="json") for r in records], indent=1), encoding="utf-8")
-    os.replace(tmp, PATH)
+    atomic_write_text(PATH, json.dumps([r.model_dump(mode="json") for r in records], indent=1))
     BACKUPS.mkdir(parents=True, exist_ok=True)
     today = BACKUPS / f"suggestions-{datetime.now(timezone.utc):%Y-%m-%d}.json"
     if not today.exists():
