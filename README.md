@@ -74,7 +74,7 @@ uv run python scripts/placebo_check.py     # optional sanity check of the playbo
 
 ### Running Orbit on your machine
 
-Orbit runs on whichever PC is on; there is no server. Each machine keeps its own `data/` (prices, playbook, journal), so two machines can run side by side.
+Orbit runs on whichever PC is on; there is no server. Each machine keeps its own `data/`, and the part that is slow or impossible to rebuild is shared through GitHub (see [Shared data](#shared-data-the-github-data-branch) below), so a new machine starts with the full histories instead of downloading them again.
 
 | Command | What it does |
 | --- | --- |
@@ -83,7 +83,44 @@ Orbit runs on whichever PC is on; there is no server. Each machine keeps its own
 | `python scripts/stop_orbit.py` | Stops the API, runner and silver download. An analysis run in progress finishes on its own. |
 | `python scripts/autostart.py` | Start Orbit at login (per user, no admin): a `.cmd` in the Windows Startup folder, a macOS LaunchAgent, or a Linux XDG autostart entry. `--remove` undoes it. |
 
+| `python scripts/sync_data.py` | Syncs the shared data with GitHub now (`--pull` to only take, `--status` to see the last sync). start_orbit and the runner do this on their own. |
+
 Double-click shortcuts: `start_orbit.cmd` on Windows, `./start_orbit.sh` on macOS/Linux. Output goes to `data/logs/{api,runner,silver}.out`; the runner's own log is `data/logs/runner.log`. Use the `.venv` Python (`.venv/Scripts/python` on Windows, `.venv/bin/python` elsewhere) or `uv run python` for the commands above; the launcher itself works with any Python 3.11+.
+
+### Shared data: the GitHub `data` branch
+
+Everything Orbit needs that can't be rebuilt in a few seconds lives on a separate `data` branch of this repo, next to the code but never mixed into it:
+
+| Shared on GitHub | Why |
+| --- | --- |
+| `{BTC,ETH,SOL,SILVER}_{1d,1h}.csv` and `history_report.json` | The stitched price histories. Rebuilding takes minutes, and some venues are blocked in some regions. |
+| `cache/dukascopy/**` | The spot-silver files, 2003 on. Downloading them takes hours because the feed throttles hard. |
+| `ephemeris_cache/de421.bsp` | NASA JPL's ephemeris kernel, so the Vedic sky can be computed offline. |
+| `analysis/placebo.json` | The latest placebo check (about 40 minutes to rerun). |
+| `journal/suggestions.json` | Your decisions and notes, **only if you turn it on** (below). |
+
+Everything else (features, the Vedic sky and events, the playbook, the backtest, the feedback loop, the model) is rebuilt on each machine by its runner and its first analysis run, from the shared data.
+
+**When it syncs:**
+- `start_orbit` syncs before starting anything, so a fresh clone gets the data first.
+- The runner then syncs once a day.
+- `python scripts/sync_data.py` syncs on demand.
+
+**How a sync works:**
+- It fetches the branch and merges it file by file with `data/`, writes each winner to both sides, and pushes what this machine has that GitHub doesn't.
+- If another machine pushed in the meantime, it fetches and merges again.
+- Files are merged by rules, never by git, so there are no merge conflicts:
+  - Price histories: the better file wins. For silver, spot beats futures; then the longer history; then the later last bar. On a tie GitHub's copy stays, so to publish a deliberate rebuild of a history, run `python scripts/sync_data.py --prefer-local`.
+  - Silver cache and kernel: files are only ever added.
+  - Placebo: the newer check wins.
+  - Journal: records are joined by suggestion, and a decision beats an undecided one. If both machines decided, the first decision stands and the other one (decision, time and notes) is written into its notes. The local journal is backed up (`data/journal/backups/before-sync-*.json`) before a sync changes it.
+- The branch is checked out in `.orbit-sync/` (ignored by the main branch), and nothing is ever deleted.
+- Pushing needs the machine's normal GitHub login. A machine that can only read still gets everything; it reports the failed push once and tries again a day later. Nothing ever waits for a password prompt.
+- Tests never sync: `tests/conftest.py` turns the sync off for every test, and CI sets `ORBIT_DATA_SYNC=0`.
+
+**Taking the data down.** Delete the `data` branch on GitHub, and put `ORBIT_DATA_SYNC=0` in `.env` on every machine. A machine that synced before refuses to put a deleted branch back, even with the setting still on. To publish again later, run `python scripts/sync_data.py --recreate` on one machine. That starts a new, empty history from its current data, so nothing old comes back.
+
+**The journal stays on each machine for now, because this repo is public.** To share it too, make the repo private (GitHub → Settings → Danger Zone → Change visibility). Then put `ORBIT_DATA_SYNC_JOURNAL=1` in `.env` on both machines. `ORBIT_DATA_SYNC=0` turns the sync off entirely.
 
 ### Web terminal
 
@@ -130,7 +167,7 @@ This README is the single source of truth for planning — update it in place wh
   - BTC: Bitstamp from 2013, then Binance from Aug 2017.
   - ETH: Coinbase from May 2016, then Binance from Aug 2017.
   - SOL: Binance from Aug 2020.
-  - Silver: Dukascopy spot XAG/USD from May 2003 (Yahoo only serves 2 years of hourly silver, and futures jump at every contract roll). `scripts/backfill_silver.py` downloads it once; the feed throttles hard, so it's paced, cached and resumable, and the runner tops it up each cycle. Until the cache is complete, the older Yahoo daily series stays in place.
+  - Silver: Dukascopy spot XAG/USD from May 2003 (Yahoo only serves 2 years of hourly silver, and futures jump at every contract roll). `scripts/backfill_silver.py` downloaded it once (the feed throttles hard, so it's paced, cached and resumable); the runner tops it up each cycle, and the cache is shared on the `data` branch so no other machine has to download it again. Complete since Sept 2026: 6,063 daily and 140,899 hourly bars, all spot.
   - Hourly bars too, from the same venues: BTC 2013+ (~120k bars), ETH 2016+, SOL 2020+, silver 2003+.
   - Before joining two venues it checks that their closes agree over the overlap (currently a median gap of about 0.45%) and refuses if they don't. Every bar records its source, and each build writes `data/history_report.json`.
   - Fetchers live in `data/binance.py`, `bitstamp.py`, `coinbase.py` and `silver.py`, sharing a retrying HTTP helper. Run with `uv run python scripts/fetch_data.py`.
@@ -203,19 +240,19 @@ Reports that don't exist yet (no backtest before the first analysis run, say) an
 
 | | Trades | Win rate | Avg R | Profit factor | Max drawdown |
 | --- | --- | --- | --- | --- | --- |
-| All assets | 215 | 39.5% | −0.013R | 0.98 | −16.5R |
+| All assets | 204 | 38.7% | −0.020R | 0.97 | −18.8R |
 | BTC | 67 | 36% | −0.067R | 0.88 | −8.2R |
 | ETH | 39 | 44% | −0.008R | 0.99 | −9.3R |
 | SOL | 23 | 30% | −0.057R | 0.90 | −3.8R |
-| Silver | 86 | 43% | +0.038R | 1.06 | −8.6R |
-| Longs (all) | 73 | | +0.129R | | |
-| Shorts (all) | 142 | | −0.086R | | |
+| Silver (spot, 2003 on) | 75 | 41% | +0.028R | 1.05 | −8.8R |
+| Longs (all) | 71 | 39% | +0.080R | | |
+| Shorts (all) | 133 | 38% | −0.073R | | |
 
-In plain words: as a whole, basic RSI divergence is roughly break-even after costs. The bullish side has been positive (+0.13R a trade), the bearish side negative, and silver slightly positive. That is the honest starting point the feedback loop and your journal build on.
+In plain words: as a whole, basic RSI divergence is roughly break-even after costs. The bullish side has been positive (+0.08R a trade), the bearish side negative, and silver slightly positive. That is the honest starting point the feedback loop and your journal build on.
 
 **Suggestions and the journal** (`strategy/live.py`, `journal/store.py`): after every data refresh, a divergence that confirmed on the latest completed bar becomes a suggestion in SUGG (entry at that bar's close, the stop and 2R target, the signals behind it). You take, skip or modify it; undecided suggestions expire after 3 bars. Every suggestion is then followed to its outcome automatically with the strategy's own levels, whether you took it or not, so the journal shows what skipped ones would have returned. Taken or modified ones are also followed with the levels you used. The journal is `data/journal/suggestions.json` on each machine, written atomically with a dated daily backup.
 
-**The feedback loop** (`strategy/calibrate.py`): a small logistic model learns which divergences actually won, from what was known at the signal: divergence size, RSI level, the price move between the swings, their distance apart, ATR, volatility percentile, trend agreement, and long vs. short. It trains on every backtest trade plus every finished live suggestion (each counted 3×, as the most recent evidence), and is retrained on every analysis run. It is checked walk-forward (trained on earlier years, tested on the next), and it only sets a suggestion's confidence once it beats the plain win rate there. So far it doesn't (Brier 0.256 vs 0.246, AUC 0.50), so every suggestion's confidence is the plain win rate, about 40%. DRIFT → FEEDBACK shows this check after every run.
+**The feedback loop** (`strategy/calibrate.py`): a small logistic model learns which divergences actually won, from what was known at the signal: divergence size, RSI level, the price move between the swings, their distance apart, ATR, volatility percentile, trend agreement, and long vs. short. It trains on every backtest trade plus every finished live suggestion (each counted 3×, as the most recent evidence), and is retrained on every analysis run. It is checked walk-forward (trained on earlier years, tested on the next), and it only sets a suggestion's confidence once it beats the plain win rate there. So far it doesn't (Brier 0.264 vs 0.252, AUC 0.53), so every suggestion's confidence is the plain win rate, about 39%. DRIFT → FEEDBACK shows this check after every run.
 
 **Drift** (`backtest/drift.py`): live win rate vs. the backtest's, as a z-score, once there are 10 finished live suggestions. At 1σ it's WATCH; at 2σ it's DRIFT, the point to scale down.
 
@@ -276,13 +313,13 @@ Treated as one testable input among others — back-tested with the same rigor a
   - It is a ridge logistic regression, trained walk-forward: retrained every 2 years, always tested on the years after, with the ridge strength picked on the last 20% of each training window.
   - The price-only model uses 9 features: returns, volatility, trend and RSI.
   - The sky gets credit only if adding it beats price alone out-of-sample, **and** beats the same Vedic data shifted by about 2 and 4 years, **and** beats simply guessing the base rate, in most of the test years. The shifted controls have the same structure but can't know anything.
-- **Validation**: `scripts/placebo_check.py` moves every event date (and exact moment) by arbitrary offsets and re-runs everything, daily and hourly; any moderate or strong result on those fake calendars is a false discovery. Before the Vedic switch it produced 0 of 32 (daily) and 0 of 32 (hourly timing), after fixing an earlier 6 of 32. A planted-effect unit test confirms the method still catches a real effect.
-- **Findings so far (Sept 2026)**: 12,868 tests across four assets and 11 families, daily and hourly.
+- **Validation**: `scripts/placebo_check.py` moves every event date (and exact moment) by arbitrary offsets and re-runs everything, daily and hourly; any moderate or strong result on those fake calendars is a false discovery. With the Vedic events it produces 0 of 32 (daily) and 0 of 32 (hourly timing), as it did before the switch (after fixing an earlier 6 of 32). A planted-effect unit test confirms the method still catches a real effect.
+- **Findings so far (Sept 2026)**: 15,261 tests across four assets and 12 families, daily and hourly (silver's hourly timing included since its spot history arrived).
   - **No Vedic pattern survives multiple-testing correction for any asset, at daily or hourly resolution.** That is 0 strong and 0 moderate.
-  - Some patterns are "weak" (nominally significant): BTC 62, ETH 38, SOL 23, silver 87 (daily), at about the rate chance alone produces among that many tests.
+  - Some patterns are "weak" (nominally significant): BTC 60, ETH 41, SOL 23, silver 83 (daily); 57, 41, 36 and 73 (hourly timing). That is about the rate chance alone produces among that many tests.
   - The model: 24 targets checked (4 assets × big up / big down / sideways × 5 and 20 days ahead). 22 show no added skill.
-    - SOL's big up moves 20 days ahead passed: +3.5% skill with the sky vs. −0.4% on price alone, better in all 3 test years, and beating the one control SOL's short history allows.
-    - Silver's sideways 5 days ahead is "unclear": the gain is too small to beat simply guessing the base rate.
+    - SOL's big up moves 20 days ahead passed: +3.6% skill with the sky vs. −0.4% on price alone, better in all 3 test years, and beating the one control SOL's short history allows.
+    - BTC's sideways 5 days ahead and silver's big down moves 20 days ahead are "unclear": a gain too small to beat simply guessing the base rate.
     - One or two passes out of 24 is what chance alone produces, so SOL's result is on watch, not trusted, until it holds on later runs.
   - Price alone has a small real edge on big up moves 5 days ahead (BTC: about 4% better than guessing the base rate, AUC ~0.61).
   - The playbook and model re-run every day. A pattern only counts once it clears the correction; the sky only counts once it beats the controls.
@@ -314,6 +351,7 @@ Notes from researching how professional quant systems structure this, so we buil
 
 - **Project name**: working title **Orbit** (used for the astro-transit + always-on-monitoring theme).
 - **Strategy definition**: settled for now: basic RSI(14) divergence (above). Refinements should come from the journal and the feedback loop, one change at a time, each re-backtested.
-- **Hosting**: settled: no server. Orbit runs on the team's own PCs (`scripts/start_orbit.py`, optionally at login). The daily 00:30 UTC analysis runs whenever a runner is up, and catches up when a PC comes back on.
+- **Hosting**: settled: no server. Orbit runs on the team's own PCs (`scripts/start_orbit.py`, optionally at login), sharing data through the GitHub `data` branch. The daily 00:30 UTC analysis runs whenever a runner is up, and catches up when a PC comes back on.
+- **Sharing the journal**: needs the repo to be private first (see Shared data).
 - **Journal fields**: settled: `JournalEntry.outcome_pnl` is the percent return net of costs on the levels you acted on; journal rows add `counterfactual_pnl` (what a skipped or expired suggestion would have returned), `expired`, and `exit_reason`.
 - **Position sizing and alerts**: next to decide.
