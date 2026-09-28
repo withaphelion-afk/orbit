@@ -5,6 +5,10 @@
     python scripts/start_orbit.py --status
     python scripts/autostart.py              # start Orbit when you log in (--remove to undo)
 
+Before starting the services, start_orbit syncs the shared data with GitHub
+(src/orbit/datasync.py), so a fresh clone begins with the full histories and
+the silver cache instead of downloading them again.
+
 Each background process is started detached with its output in
 data/logs/<name>.out, and its pid is kept in data/run/<name>.json so it can be
 found and stopped again. Safe to run twice: anything already running is left
@@ -29,6 +33,8 @@ import urllib.request
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+
+from orbit.fsutil import alive
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
@@ -64,29 +70,6 @@ def api_url() -> str:
 
 
 # ---------------------------------------------------------------- processes
-
-
-def alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if WINDOWS:
-        import ctypes
-
-        k32 = ctypes.windll.kernel32
-        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return False
-        code = ctypes.c_ulong()
-        ok = k32.GetExitCodeProcess(handle, ctypes.byref(code))
-        k32.CloseHandle(handle)
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def command_of(pid: int) -> str:
@@ -229,6 +212,19 @@ def build_web_if_stale(say=print) -> None:
         say("! Web build failed:\n" + (result.stdout + result.stderr)[-2000:])
 
 
+def sync_data(say=print) -> None:
+    """Pull (and push) the shared data branch. A failure is a warning, never a reason not to start."""
+    say("Syncing data with GitHub (the first time on a new machine can take a few minutes)...")
+    try:
+        out = subprocess.run([python(), "-m", "orbit.datasync"], cwd=ROOT, capture_output=True, text=True, timeout=900,
+                             encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    except subprocess.TimeoutExpired:
+        say("! Data sync took too long; starting with the data already here. Run python scripts/sync_data.py later.")
+        return
+    for line in (out.stdout + out.stderr).strip().splitlines()[-4:]:
+        say(("! " if out.returncode else "") + line)
+
+
 def silver_complete() -> bool:
     check = "from orbit.data.history import silver_cache_complete as c; import sys; sys.exit(0 if c() else 1)"
     return subprocess.run([python(), "-c", check], cwd=ROOT, capture_output=True).returncode == 0
@@ -245,6 +241,8 @@ def start(open_browser: bool = True, say=print) -> int:
         say("Setting up the Python environment (uv sync)...")
         subprocess.run(["uv", "sync", "--extra", "dev"], cwd=ROOT, check=True)
     build_web_if_stale(say)
+    if not running_pid(RUNNER):
+        sync_data(say)  # while the runner is up, it syncs on its own schedule
 
     if running_pid(API) or api_responding():
         say(f"API already running at {api_url()}.")
@@ -299,6 +297,11 @@ def status(say=print) -> int:
         else:
             say(f"{service.name:8s} {'running, pid ' + str(pid) if pid else 'stopped'}")
     say(f"web      {'built' if (WEB / 'dist' / 'index.html').exists() else 'not built (needs Node/npm)'}")
+    try:
+        last = json.loads((DATA / "run" / "sync.json").read_text(encoding="utf-8")).get("last_success", "never")
+    except (OSError, ValueError):
+        last = "never"
+    say(f"data sync last {last} (python scripts/sync_data.py --status)")
     auto = autostart_path()
     say(f"autostart {'on (' + str(auto) + ')' if auto.exists() else 'off'}")
     return 0

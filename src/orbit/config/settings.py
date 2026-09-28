@@ -83,6 +83,18 @@ SUGGESTION_EXPIRY_BARS = 3  # an undecided suggestion expires after this many da
 DRIFT_WATCH_Z = 1.0
 DRIFT_SCALE_DOWN_Z = 2.0
 
+# --- Data sync (datasync.py) ----------------------------------------------------
+# The data that is slow or impossible to rebuild (price histories, the Dukascopy
+# silver cache, the DE421 kernel, the placebo check, optionally the journal) is
+# mirrored to a `data` branch on GitHub, so every machine can start from it.
+DATA_SYNC_ENABLED = os.getenv("ORBIT_DATA_SYNC", "1") == "1"
+DATA_SYNC_REMOTE = os.getenv("ORBIT_DATA_SYNC_REMOTE", "origin")
+DATA_SYNC_BRANCH = os.getenv("ORBIT_DATA_SYNC_BRANCH", "data")
+DATA_SYNC_EVERY_HOURS = 24  # the runner syncs at most this often (start_orbit also syncs on start)
+# Your decisions and notes. Off by default while the repo is public: turn it on
+# (ORBIT_DATA_SYNC_JOURNAL=1 in .env on each machine) once the repo is private.
+DATA_SYNC_JOURNAL = os.getenv("ORBIT_DATA_SYNC_JOURNAL", "0") == "1"
+
 # --- API server (python -m orbit.api) ----------------------------------------
 API_HOST = os.getenv("ORBIT_API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("ORBIT_API_PORT", "8000"))

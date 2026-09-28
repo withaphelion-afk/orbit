@@ -54,3 +54,35 @@ def test_autostart_install_and_remove(tmp_path, monkeypatch):
 def test_python_prefers_the_project_venv():
     py = launcher.python()
     assert py.endswith(("python.exe", "python")) or py == sys.executable
+
+
+HOLD_LOCK = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from orbit.fsutil import file_lock
+with file_lock(Path(sys.argv[2])):
+    print("held", flush=True)
+    time.sleep(60)
+"""
+
+
+def test_a_killed_lock_holder_releases_the_lock_at_once(tmp_path):
+    """fsutil.file_lock uses the OS's own lock, so a process that dies can't leave everyone else waiting."""
+    import subprocess
+
+    from orbit.fsutil import LockTimeout, file_lock
+
+    lock = tmp_path / "x.lock"
+    holder = subprocess.Popen([sys.executable, "-c", HOLD_LOCK, str(launcher.ROOT / "src"), str(lock)], stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        with pytest.raises(LockTimeout):
+            with file_lock(lock, timeout=0.5):
+                pass
+    finally:
+        holder.kill()
+        holder.wait()
+    started = time.monotonic()
+    with file_lock(lock, timeout=5):
+        assert time.monotonic() - started < 3
