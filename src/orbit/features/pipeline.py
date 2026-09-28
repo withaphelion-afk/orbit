@@ -7,9 +7,10 @@ from __future__ import annotations
 import shutil
 
 from orbit.config.settings import TIMEFRAME
-from orbit.core.types import Asset, Planet
-from orbit.data.storage import load_candles, load_ephemeris_snapshots
-from orbit.features.astro import ephemeris_to_features
+from orbit.core.types import Asset
+from orbit.data.storage import load_candles
+from orbit.features.astro import vedic_features
+from orbit.vedic.sky import load_sky
 from orbit.features.regime import compute_regime_series, compute_trend_series
 from orbit.features.store import FEATURES_DIR, save_features
 from orbit.features.technical import compute_technical_features
@@ -43,9 +44,8 @@ def compute_all_features() -> None:
             if records:
                 save_features(records)
 
-    for planet in Planet:
-        snapshots = load_ephemeris_snapshots(planet)
-        if not snapshots:
-            continue
-        for asset in ALL_ASSETS:
-            save_features(ephemeris_to_features(snapshots, asset))
+    sky = load_sky()
+    for asset in ALL_ASSETS:
+        records = vedic_features(load_candles(asset, TIMEFRAME), sky)
+        if records:
+            save_features(records)

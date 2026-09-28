@@ -25,12 +25,20 @@ def _bars(asset: Asset, days: int, start_price: float = 100.0) -> list[Candle]:
     ]
 
 
-def test_unbuilt_layers_answer_honestly(client):
+def test_empty_journal_and_no_backtest_answer_honestly(client, monkeypatch, tmp_path):
+    from orbit.backtest import drift as drift_module
+    from orbit.backtest import engine
+    from orbit.journal import store as journal_store
+
+    monkeypatch.setattr(journal_store, "PATH", tmp_path / "suggestions.json")
+    monkeypatch.setattr(engine, "BACKTEST_DIR", tmp_path / "backtest")
+    monkeypatch.setattr(drift_module, "load_backtest", lambda: None)
     assert client.get("/api/suggestions").json() == []
     assert client.get("/api/journal").json() == []
-    assert client.post("/api/suggestions/abc/decision").status_code == 501
+    assert client.post("/api/suggestions/abc/decision", json={"decision": "TAKEN"}).status_code == 404
     drift = client.get("/api/drift")
     assert drift.status_code == 404 and "backtest" in drift.json()["detail"]
+    assert client.get("/api/backtest").status_code == 404
 
 
 def test_missing_history_is_a_clear_404(client, monkeypatch):
@@ -41,13 +49,15 @@ def test_missing_history_is_a_clear_404(client, monkeypatch):
 
 def test_system_reports_never_run_and_components(client, monkeypatch):
     monkeypatch.setattr(app_module, "read_status", lambda: None)
+    monkeypatch.setattr(store, "backtest_exists", lambda: False)
     monkeypatch.setattr(store, "candles", lambda asset: [])
     monkeypatch.setattr(store, "history_report", lambda: {})
     monkeypatch.setattr(store, "playbook_meta", lambda: None)
     monkeypatch.setattr(store, "runner_log", lambda: [])
     body = client.get("/api/system").json()
     assert body["runner"]["state"] == "NEVER_RUN"
-    assert body["components"] == {"runner": False, "playbook": False, "strategy": False, "journal": False, "backtest": False, "alerts": False}
+    assert body["components"] == {"runner": False, "playbook": False, "strategy": True, "journal": True, "backtest": False, "alerts": False}
+    assert body["strategy"] == "RSI(14) divergence"
     assert body["auto_execution"] is False
 
 
@@ -109,3 +119,19 @@ def test_intraday_window(client, monkeypatch):
     monkeypatch.setattr(store, "candles", lambda asset, timeframe="1d": bars if timeframe == "1h" else [])
     r = client.get("/api/intraday/BTC", params={"at": "2026-01-02T00:30:00Z", "before_hours": 2, "after_hours": 3})
     assert [c["timestamp"][11:13] for c in r.json()] == ["23", "00", "01", "02", "03"]
+
+
+def test_pre_vedic_saved_events_fall_back_to_the_vedic_detector(monkeypatch, tmp_path):
+    """A machine whose last analysis run predates the Vedic switch must not serve its old tropical events."""
+    from orbit.core.types import Planet, TransitEvent, TransitEventType
+
+    old = tmp_path / "events.json"
+    old.write_text('[{"planet": "MARS", "event_type": "INGRESS", "date": "2025-01-01T00:00:00Z", "from_state": "Aries", "to_state": "Taurus"}]',
+                   encoding="utf-8")
+    vedic = [TransitEvent(planet=Planet.SATURN, event_type=TransitEventType.INGRESS, date=datetime(2025, 3, 29, tzinfo=timezone.utc),
+                          from_state="Kumbha", to_state="Meena", label="Shani (Saturn) enters Meena (Pisces)")]
+    monkeypatch.setattr(store, "EVENTS_PATH", old)
+    monkeypatch.setattr(store, "VEDIC_EVENTS", tmp_path / "vedic.json")
+    monkeypatch.setattr(store, "load_vedic_events", lambda: vedic)
+    monkeypatch.setattr(store, "_cache", {})
+    assert store.transit_events() == vedic

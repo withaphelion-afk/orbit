@@ -122,21 +122,25 @@ export function OrbitChart({ asset, candles, signals, transits, pending }: Props
     a.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 130), to: bars.length + 3 })
   }, [candles, dp])
 
-  // Markers: signals below/above bars, transits as violet squares on their day.
+  // Markers: signals below/above bars, Vedic events as violet squares on their day.
   useEffect(() => {
     const a = api.current
     if (!a || !candles.length) return
     const th = readTheme()
     const first = ts(candles[0].timestamp)
     const last = ts(candles[candles.length - 1].timestamp)
-    const m: SeriesMarker<Time>[] = signals.map((s) => ({
-      time: ts(s.timestamp),
-      position: s.direction === 'LONG' ? 'belowBar' : 'aboveBar',
-      shape: s.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
-      color: s.direction === 'LONG' ? th.up : th.down,
-      text: s.direction === 'LONG' ? 'BULL' : 'BEAR',
-      size: 0.8,
-    }))
+    // RSI divergences are the strategy's signals; regime flips are context.
+    const m: SeriesMarker<Time>[] = signals.map((s) => {
+      const div = s.name === 'rsi_divergence'
+      return {
+        time: ts(s.timestamp),
+        position: s.direction === 'LONG' ? 'belowBar' : 'aboveBar',
+        shape: s.direction === 'LONG' ? 'arrowUp' : 'arrowDown',
+        color: s.direction === 'LONG' ? th.up : th.down,
+        text: div ? 'RSI DIV' : s.direction === 'LONG' ? 'BULL' : 'BEAR',
+        size: div ? 1 : 0.7,
+      }
+    })
     // Markers need a bar at their time: move weekend transits (silver) to the next bar.
     const barTimes = candles.map((c) => ts(c.timestamp))
     for (const v of transits) {

@@ -4,14 +4,8 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
-from orbit.config.settings import EPHEMERIS_YEARS_AHEAD, EPHEMERIS_YEARS_OF_HISTORY
-from orbit.core.types import Asset, Planet
-from orbit.data import ephemeris
-from orbit.data.dates import today_utc
+from orbit.core.types import Asset
 from orbit.data.history import TIMEFRAMES, update_history
-from orbit.data.storage import save_ephemeris_snapshots
 
 ALL_ASSETS = [Asset.BTC, Asset.ETH, Asset.SOL, Asset.SILVER]
 
@@ -31,17 +25,12 @@ def fetch_all_prices() -> dict[str, dict | None]:
     return reports
 
 
-def fetch_all_ephemeris(years: int = EPHEMERIS_YEARS_OF_HISTORY, years_ahead: int = EPHEMERIS_YEARS_AHEAD) -> None:
-    """Planetary positions for every tracked planet, from `years` back to
-    `years_ahead` forward (future positions are what "upcoming transits" come from).
-
-    Runs entirely offline after the ephemeris kernel is downloaded once,
-    and is fast even for decades of history (see data/ephemeris.py), so
-    it's safe to recompute in full on every runner cycle rather than
-    needing incremental updates.
+def fetch_all_ephemeris() -> int:
+    """Bring the Vedic sky up to date: sidereal positions of the 9 grahas every
+    6 hours from 2000 to EPHEMERIS_YEARS_AHEAD ahead, and every event on them
+    (orbit/vedic). Cached; only rebuilt when it no longer reaches far enough
+    ahead. Returns the number of events.
     """
-    start_date = today_utc() - timedelta(days=years * 365)
-    days = (years + years_ahead) * 365
-    for planet in Planet:
-        snapshots = ephemeris.backfill_planet(planet, start_date, days=days)
-        save_ephemeris_snapshots(snapshots)
+    from orbit.vedic.events import load_events
+
+    return len(load_events())

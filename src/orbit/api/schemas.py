@@ -15,12 +15,15 @@ from pydantic import BaseModel
 from orbit.core.types import (
     Asset,
     ConfidenceLabel,
+    Decision,
+    JournalEntry,
     Outcome,
     PatternHorizonStat,
     Planet,
     SidewaysStateResult,
     SpeedClass,
     TimingHorizonStat,
+    TradeSuggestion,
     TransitEvent,
     TransitEventType,
 )
@@ -52,12 +55,19 @@ class RegimeReading(BaseModel):
 
 
 class SkyPosition(BaseModel):
+    """A graha's place in the sidereal (Vedic) zodiac right now."""
+
     planet: Planet
-    longitude: float
-    sign: str
-    degree: float  # 0-30 within the sign
-    retrograde: bool
-    next_event: TransitEvent | None
+    name: str  # e.g. "Shani (Saturn)"
+    longitude: float  # sidereal, 0-360
+    sign: str  # rashi, e.g. "Meena (Pisces)"
+    degree: float  # 0-30 within the rashi
+    nakshatra: str
+    pada: int  # 1-4
+    retrograde: bool  # vakri (always true for Rahu and Ketu)
+    combust: bool  # asta
+    dignity: str | None  # uchcha / neecha
+    next_event: TransitEvent | None  # next rashi change or station
 
 
 class NotableFor(BaseModel):
@@ -170,6 +180,53 @@ class SystemStatus(BaseModel):
     log: list[LogLine]  # newest first
     config: dict[str, str]
     playbook_generated_at: datetime | None
+
+
+class SuggestionView(BaseModel):
+    id: str
+    created_at: datetime
+    risk_reward: float
+    suggestion: TradeSuggestion
+
+
+class DecisionRequest(BaseModel):
+    decision: Decision
+    notes: str = ""
+    entry_price: float | None = None  # only read for MODIFIED
+    stop_loss: float | None = None
+    take_profit: float | None = None
+
+
+class JournalRow(BaseModel):
+    id: str
+    decided_at: datetime  # when you decided, or when it expired undecided
+    entry: JournalEntry
+    expired: bool = False  # no decision within SUGGESTION_EXPIRY_BARS (logged as SKIPPED)
+    counterfactual_pnl: float | None  # what a skipped/expired suggestion would have returned
+    exit_reason: str | None = None  # target / stop / time, once the outcome is known
+
+
+class EquityPoint(BaseModel):
+    time: datetime
+    expected: float
+    live: float
+    band: float
+
+
+class DriftReport(BaseModel):
+    status: Literal["OK", "WATCH", "DRIFT"]
+    z_score: float
+    scale_down_at: float
+    min_trades: int  # below this many live trades the status stays OK
+    expected_win_rate: float
+    live_win_rate: float
+    expected_avg_r: float
+    live_avg_r: float
+    expected_max_dd: float  # in R
+    live_max_dd: float
+    backtest_trades: int
+    live_trades: int
+    curve: list[EquityPoint]
 
 
 class RunRequest(BaseModel):

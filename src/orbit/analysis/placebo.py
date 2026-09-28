@@ -20,7 +20,8 @@ from orbit.core.types import TransitEvent
 from orbit.analysis.exact_times import shift
 from orbit.analysis.patterns import build_patterns
 from orbit.analysis.playbook import ALL_ASSETS, ANALYSIS_DIR, build_asset_playbook, load_events
-from orbit.analysis.series import load_planet_series, load_price_series
+from orbit.analysis.series import load_price_series
+from orbit.vedic.states import build_states
 
 OFFSETS_DAYS = [97, 211, 389, 577, 733, 1009, 1291, 1597]
 DISCOVERY = ("moderate", "strong")
@@ -29,8 +30,8 @@ DISCOVERY = ("moderate", "strong")
 def run_placebo(progress: Callable[[str, float], None] | None = None, events: list[TransitEvent] | None = None) -> dict:
     say = progress or (lambda step, frac: None)
     now = datetime.now(timezone.utc)
-    planets = load_planet_series()
     real = events if events is not None else load_events()
+    states = build_states(events=real)
     daily = {a: load_price_series(a) for a in ALL_ASSETS}
     hourly = {a: load_price_series(a, timeframe="1h") for a in ALL_ASSETS}
     runs = []
@@ -42,7 +43,7 @@ def run_placebo(progress: Callable[[str, float], None] | None = None, events: li
         for asset in ALL_ASSETS:
             if len(daily[asset]) < 300:
                 continue
-            pb, counts = build_asset_playbook(asset, daily[asset], patterns, shifted, planets, now, hourly[asset] if len(hourly[asset]) else None)
+            pb, counts = build_asset_playbook(asset, daily[asset], patterns, shifted, states, now, hourly[asset] if len(hourly[asset]) else None)
             row[asset.value] = {
                 "tests": sum(counts.values()),
                 "discoveries": [r.pattern_id for r in pb.patterns if r.label.value in DISCOVERY],

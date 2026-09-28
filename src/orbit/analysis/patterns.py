@@ -1,18 +1,9 @@
-"""The hypothesis list: exactly which transit patterns get tested.
+"""The hypothesis list: which Vedic patterns get tested.
 
-Written out (data/analysis/hypotheses.json) before any test runs, so the full
-set of trials is on record and nothing can be quietly added after looking at
-results. Each pattern groups events two ways, because per-sign splits of
-anything slower than Venus almost never reach the minimum sample:
-
-    {PLANET}:INGRESS             every first-entry forward ingress
-    {PLANET}:INGRESS:{Sign}      first-entry forward ingress into one sign
-    {PLANET}:STATION_RETROGRADE  planet turns retrograde
-    {PLANET}:STATION_DIRECT      planet turns direct
-
-Backward ingresses and re-entries are recorded as events but not tested, so
-one pass through a sign is counted once. All pattern tests for an asset are
-corrected together as one family.
+Patterns come from orbit/vedic/patterns.py (the Jyotish definitions); this
+module groups events into them. The full list is written out
+(data/analysis/hypotheses.json) before any test runs, so the set of trials is
+on record. All pattern tests for an asset are corrected together as one family.
 """
 
 from __future__ import annotations
@@ -20,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from orbit.core.types import Planet, SpeedClass, TransitEvent, TransitEventType
-from orbit.data.ephemeris import ZODIAC_SIGNS
-from orbit.analysis.transit_events import SPEED_CLASS, STATION_PLANETS
+from orbit.vedic import patterns as vedic
+from orbit.vedic.zodiac import RASHIS
 
 
 @dataclass
@@ -36,53 +27,27 @@ class Pattern:
 
     @property
     def family_key(self) -> str:
-        # One family per asset for every pattern test (Moon included). Splitting
-        # families lets each claim its own false-discovery budget; a placebo check
-        # showed that roughly doubled false alarms per asset.
+        # One family per asset for every pattern test. Splitting families lets each
+        # claim its own false-discovery budget; a placebo check showed that roughly
+        # doubled false alarms per asset.
         return "PATTERNS"
 
 
-def _title(p: Planet) -> str:
-    return p.value.capitalize()
-
-
-def build_patterns(events: list[TransitEvent], include_moon: bool) -> list[Pattern]:
+def build_patterns(events: list[TransitEvent], include_moon: bool = True) -> list[Pattern]:
     patterns: dict[str, Pattern] = {}
-
-    def add(pid: str, desc: str, planet: Planet, etype: TransitEventType, sign: str | None) -> Pattern:
-        if pid not in patterns:
-            patterns[pid] = Pattern(pid, desc, planet, etype, sign, SPEED_CLASS[planet])
-        return patterns[pid]
-
-    # Declare every pattern up front, including ones that end up with no events,
-    # so the hypothesis list doesn't depend on what the data happened to contain.
-    for planet in Planet:
-        if planet == Planet.MOON and not include_moon:
-            continue
-        add(f"{planet.value}:INGRESS", f"{_title(planet)} enters any sign", planet, TransitEventType.INGRESS, None)
-        for sign in ZODIAC_SIGNS:
-            add(f"{planet.value}:INGRESS:{sign}", f"{_title(planet)} enters {sign}", planet, TransitEventType.INGRESS, sign)
-        if planet in STATION_PLANETS:
-            add(f"{planet.value}:STATION_RETROGRADE", f"{_title(planet)} stations retrograde", planet, TransitEventType.STATION_RETROGRADE, None)
-            add(f"{planet.value}:STATION_DIRECT", f"{_title(planet)} stations direct", planet, TransitEventType.STATION_DIRECT, None)
-
     for e in events:
-        if e.planet == Planet.MOON and not include_moon:
+        speed = vedic.speed_class(e)
+        if speed == SpeedClass.LUNAR and not include_moon:
             continue
-        if e.event_type == TransitEventType.INGRESS:
-            if e.backward or e.reentry:
-                continue
-            patterns[f"{e.planet.value}:INGRESS"].events.append(e)
-            patterns[f"{e.planet.value}:INGRESS:{e.to_state}"].events.append(e)
-        else:
-            patterns[f"{e.planet.value}:{e.event_type.value}"].events.append(e)
-    return list(patterns.values())
+        for pid, desc in vedic.keys(e):
+            p = patterns.get(pid)
+            if p is None:
+                sign = e.to_state if e.event_type == TransitEventType.INGRESS and pid.count(":") == 2 and e.to_state in RASHIS else None
+                p = patterns[pid] = Pattern(pid, desc, e.planet, e.event_type, sign, speed)
+            p.events.append(e)
+    return sorted(patterns.values(), key=lambda p: p.pattern_id)
 
 
 def patterns_for_event(e: TransitEvent) -> list[str]:
     """Pattern ids an event belongs to (empty for backward ingresses and re-entries)."""
-    if e.event_type == TransitEventType.INGRESS:
-        if e.backward or e.reentry:
-            return []
-        return [f"{e.planet.value}:INGRESS:{e.to_state}", f"{e.planet.value}:INGRESS"]
-    return [f"{e.planet.value}:{e.event_type.value}"]
+    return [pid for pid, _ in vedic.keys(e)]

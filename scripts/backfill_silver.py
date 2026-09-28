@@ -8,13 +8,21 @@ When the cache is complete it rebuilds silver's daily and hourly history.
     uv run python scripts/backfill_silver.py
 """
 
+import os
 import sys
 import time
 
+from orbit import launcher
 from orbit.data import dukascopy
 from orbit.data.history import rebuild_silver_from_cache, silver_targets
 
 if __name__ == "__main__":
+    # One download at a time: two would fetch the same files and trip the throttle sooner.
+    other = launcher.running_pid(launcher.SILVER)
+    if other and other not in (os.getpid(), os.getppid()):
+        print(f"The silver download is already running (pid {other}).")
+        sys.exit(0)
+    launcher.claim(launcher.SILVER)
     wanted = silver_targets()
     t0 = time.perf_counter()
 

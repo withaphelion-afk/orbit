@@ -75,33 +75,52 @@ export function HelpPanel({ hidden }: { hidden: boolean }) {
         <section>
           <h3>WHERE THE DATA COMES FROM</h3>
           <p>
-            Everything is real. Stored daily history is stitched from Bitstamp and Coinbase (early BTC and ETH) and Binance, and silver comes
-            from Yahoo futures. Live prices stream from Binance every few seconds; silver's are delayed. Planet positions come from NASA JPL's
-            DE421 ephemeris.
+            Everything is real. Stored daily history is stitched from Bitstamp and Coinbase (early BTC and ETH) and Binance. Silver is
+            Dukascopy spot (XAG/USD, 2003 on) once its one-time download completes (scripts/backfill_silver.py); until then it is Yahoo
+            futures. SYS (F8) shows which source each asset is on. Live prices stream from Binance every few seconds; silver's are delayed. Graha positions come
+            from NASA JPL's DE421 ephemeris, converted to the sidereal zodiac (Lahiri / Chitrapaksha ayanamsa).
           </p>
-          <p>Screens for layers that aren't built yet (strategy, journal, backtest) say so instead of showing anything made up.</p>
+          <p>Screens for reports that haven't been generated yet say so instead of showing anything made up.</p>
         </section>
         <section>
           <h3>TRANSIT PLAYBOOK (ASTRO)</h3>
           <p>
-            For each asset, every sign ingress and retrograde station is scored against what followed it: a big move (the asset's own top or
-            bottom 15%), a sideways stretch, or neither. Each pattern is tested against a shifted version of its own calendar, then corrected
-            for how many tests were run.
+            Vedic rules only. For each asset, every graha's rashi and nakshatra changes, vakri and margi stations, yuti, drishti (7th plus the
+            special aspects of Mangal, Guru, Shani and the nodes), asta, graha yuddha, amavasya, purnima, grahan and the named yogas are scored
+            against what followed: a big move (the asset's own top or bottom 15%), a sideways stretch, or neither. Each pattern is tested against
+            a shifted version of its own calendar, then corrected for how many tests were run.
           </p>
           <p>
             STRONG and MODERATE survive that correction; WEAK doesn't; TOO FEW (under 12 occurrences) is never tested. Placebo runs on fake
             calendars check that the method isn't finding patterns in noise.
           </p>
+          <p>
+            MODEL goes further: a forecaster that sees every Vedic state at once, trained walk-forward, only credited if it beats price alone and
+            beats the same sky shifted by years.
+          </p>
         </section>
         <section>
           <h3>CHART</h3>
           <p>LIVE streams TradingView's own market data through their embedded chart, with their drawing tools and intervals.</p>
-          <p>ORBIT draws Orbit's full stored history with regime flips and transit markers; circles mark transits the playbook rates for this asset. TradingView's widget can't show those.</p>
+          <p>
+            ORBIT draws Orbit's full stored history with every RSI divergence (the strategy's signals), regime flips and Vedic markers (stations,
+            eclipses, slow rashi changes); circles mark events the playbook rates for this asset. TradingView's widget can't show those.
+          </p>
         </section>
         <section>
           <h3>HOW ORBIT DECIDES</h3>
-          <p>One strategy runs at a time. Each suggestion lists the signals behind it and how strongly each one agrees. Signals that disagree are marked AGAINST and pull confidence down.</p>
-          <p>Nothing executes on its own. You take, skip or modify every suggestion, and each decision goes to the journal. Drift compares live results with the backtest and scales Orbit down when the two diverge.</p>
+          <p>
+            One strategy runs: RSI(14) divergence on daily bars. A lower price low with a higher RSI low is bullish; a higher high with a lower RSI
+            high is bearish. Stop beyond the swing, target 2R, out after 30 bars. It is backtested on the full history every analysis run.
+          </p>
+          <p>
+            Confidence comes from the feedback loop: a model of which divergences actually worked, retrained on every run with the backtest plus
+            every live outcome. It only sets confidence once it beats the plain win rate out-of-sample; until then confidence is that win rate.
+          </p>
+          <p>
+            Nothing executes on its own. You take, skip or modify every suggestion, and each decision goes to the journal. Every suggestion is
+            followed to its outcome whether you took it or not. Drift compares live results with the backtest.
+          </p>
         </section>
       </div>
     </Panel>

@@ -72,16 +72,14 @@ export function SuggestionsPanel({ hidden }: { hidden: boolean }) {
         <QueryState isPending={sysPending} error={sysError} what="system status" />
       ) : !built ? (
         <NotBuilt layer="STRATEGY">
-          <span>
-            Nothing produces trade suggestions yet: the strategy layer (<code>src/orbit/strategy/</code>) is still empty. When it exists, each
-            suggestion lands here with the signals behind it, for you to take, skip or modify.
-          </span>
+          <span>This backend doesn't report a strategy layer. Update it to the latest code.</span>
         </NotBuilt>
       ) : isError ? (
         <QueryState isPending={false} error={error} what="suggestions" />
       ) : !current ? (
         <Empty title="QUEUE CLEAR">
-          <span>No suggestions are waiting. The runner evaluates again at 00:00 UTC.</span>
+          <span>No suggestions are waiting. The runner checks for a new RSI divergence on every completed daily bar.</span>
+          <span className="dim">A suggestion expires if it isn't decided within 3 bars; it is still followed to its outcome.</span>
           <span className="dim">Every decision is logged in JRNL (F5).</span>
         </Empty>
       ) : (

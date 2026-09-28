@@ -1,36 +1,48 @@
-"""Turn ephemeris snapshots into numeric FeatureRecords.
+"""Vedic astro features for the feature store, one set per day of an asset's history.
 
-Astrology's transits aren't specific to one tradeable asset — a Jupiter
-sign change is the same fact whether you trade BTC or silver. We still
-tag each record with an asset, though, because the feature store is
-asset-keyed and the per-asset entry layer only reads its own asset's
-file — so the same ephemeris feature gets written once per tracked asset.
+Astrology isn't specific to one asset, but the feature store is asset-keyed
+(each strategy reads only its own asset's file), so the same Vedic features
+are written once per tracked asset, for the days that asset has bars.
 
-`sign_index` (0-11, Aries=0 ... Pisces=11) is used instead of storing the
-sign name as text, since FeatureRecord.value is always a float — this
-keeps every feature combinable/scorable the same way.
+Per graha (sidereal, Vedic rules; see orbit/vedic):
+    {graha}_rashi      rashi index 0 (Mesha) .. 11 (Meena), read at 00:00 UTC
+    {graha}_vakri      1 while retrograde (Mars..Saturn)
+    {graha}_asta       1 while combust (Mars..Saturn)
+plus moon_nakshatra (0 Ashwini .. 26 Revati).
+Values are floats so every feature can be scored and combined the same way.
 """
 
 from __future__ import annotations
 
-from orbit.core.types import Asset, EphemerisSnapshot, FeatureRecord
-from orbit.data.ephemeris import ZODIAC_SIGNS
+import numpy as np
+
+from orbit.core.types import Asset, Candle, FeatureRecord, Planet
+from orbit.vedic import zodiac as z
+from orbit.vedic.sky import Sky, load_sky
+from orbit.vedic.states import SAMPLES_PER_DAY, build_states
 
 
-def ephemeris_to_features(snapshots: list[EphemerisSnapshot], asset: Asset) -> list[FeatureRecord]:
+def vedic_features(candles: list[Candle], sky: Sky | None = None) -> list[FeatureRecord]:
+    if not candles:
+        return []
+    sky = sky or load_sky()
+    states = build_states(sky)
+    asset: Asset = candles[0].asset
+    day0 = states.days[0]
     records = []
-    for snap in snapshots:
-        planet_name = snap.planet.value.lower()
-        sign_index = float(ZODIAC_SIGNS.index(snap.sign))
-        records.append(
-            FeatureRecord(asset=asset, name=f"{planet_name}_sign_index", date=snap.date, value=sign_index)
-        )
-        records.append(
-            FeatureRecord(
-                asset=asset,
-                name=f"{planet_name}_retrograde",
-                date=snap.date,
-                value=1.0 if snap.retrograde else 0.0,
-            )
-        )
+    series = {}
+    for g in z.GRAHAS:
+        if g == Planet.KETU:
+            continue
+        series[f"{g.value.lower()}_rashi"] = (sky.lon[g][::SAMPLES_PER_DAY] // 30).astype(float)
+    for g in z.STATION_GRAHAS:
+        series[f"{g.value.lower()}_vakri"] = states.masks[f"{g.value}:VAKRI"][1].astype(float)
+        series[f"{g.value.lower()}_asta"] = states.masks[f"{g.value}:ASTA"][1].astype(float)
+    series["moon_nakshatra"] = (sky.lon[Planet.MOON][::SAMPLES_PER_DAY] // z.NAKSHATRA_SPAN).astype(float)
+    for c in candles:
+        i = int((np.datetime64(c.timestamp.replace(tzinfo=None), "D") - day0).astype(int))
+        if not 0 <= i < len(states.days):
+            continue
+        for name, values in series.items():
+            records.append(FeatureRecord(asset=asset, name=name, date=c.timestamp, value=float(values[i])))
     return records

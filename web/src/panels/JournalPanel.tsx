@@ -6,10 +6,10 @@ import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
 import { day, num, price, signed, tone } from '../lib/format'
 
-type Filter = 'ALL' | 'TAKEN' | 'SKIPPED' | 'MODIFIED' | 'OPEN'
+type Filter = 'ALL' | 'TAKEN' | 'SKIPPED' | 'MODIFIED' | 'EXPIRED' | 'OPEN'
 type SortKey = 'date' | 'asset' | 'conf' | 'pnl'
 
-const FILTERS: Filter[] = ['ALL', 'TAKEN', 'SKIPPED', 'MODIFIED', 'OPEN']
+const FILTERS: Filter[] = ['ALL', 'TAKEN', 'SKIPPED', 'MODIFIED', 'EXPIRED', 'OPEN']
 const isOpen = (r: JournalRow) => r.entry.decision !== 'SKIPPED' && r.entry.outcome_pnl === null
 
 const sortValue: Record<SortKey, (r: JournalRow) => number | string> = {
@@ -36,7 +36,9 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
   }, [data])
 
   const rows = useMemo(() => {
-    const f = data.filter((r) => (filter === 'ALL' ? true : filter === 'OPEN' ? isOpen(r) : r.entry.decision === filter))
+    const f = data.filter((r) =>
+      filter === 'ALL' ? true : filter === 'OPEN' ? isOpen(r) : filter === 'EXPIRED' ? r.expired : r.entry.decision === filter && !r.expired,
+    )
     const get = sortValue[sort.key]
     return f.slice().sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir)
   }, [data, filter, sort])
@@ -54,10 +56,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
         <QueryState isPending={sysPending} error={sysError} what="system status" />
       ) : !built ? (
         <NotBuilt layer="JOURNAL">
-          <span>
-            The journal records every suggestion, what you decided and how it played out. It needs the strategy layer to produce suggestions
-            first, and <code>src/orbit/journal/</code> is still empty.
-          </span>
+          <span>This backend doesn't report a journal. Update it to the latest code.</span>
         </NotBuilt>
       ) : (
       <>
@@ -79,7 +78,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
           <span className="lbl">Closed P&amp;L</span>
           <span className={`v ${tone(stats.pnl)}`}>{signed(stats.pnl)}%</span>
         </div>
-        <div title="What the skipped suggestions would have returned">
+        <div title="What the skipped and expired suggestions would have returned, with the strategy's own levels">
           <span className="lbl">Skipped would-be</span>
           <span className={`v ${tone(stats.skippedPnl)}`}>{signed(stats.skippedPnl)}%</span>
         </div>
@@ -92,6 +91,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
               {th('asset', 'Asset', 'l')}
               <th className="l">Dir</th>
               <th className="l">Decision</th>
+              <th className="l">Exit</th>
               {th('conf', 'Conf')}
               <th>Entry</th>
               <th>Stop</th>
@@ -110,8 +110,9 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
                   <td className="l strong">{ASSET_META[s.asset].label}</td>
                   <td className={`l ${s.direction === 'LONG' ? 'up' : 'down'}`}>{s.direction}</td>
                   <td className="l">
-                    <span className={`dec ${r.entry.decision}`}>{r.entry.decision}</span>
+                    <span className={`dec ${r.expired ? 'EXPIRED' : r.entry.decision}`}>{r.expired ? 'EXPIRED' : r.entry.decision}</span>
                   </td>
+                  <td className="l mid">{r.exit_reason ?? '—'}</td>
                   <td>{s.confidence.toFixed(2)}</td>
                   <td>{price(s.asset, s.entry_price)}</td>
                   <td className="mid">{price(s.asset, s.stop_loss)}</td>
@@ -135,8 +136,8 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
             })}
             {!rows.length && (
               <tr>
-                <td colSpan={10} className="l dim empty-row">
-                  No entries match {filter}.
+                <td colSpan={11} className="l dim empty-row">
+                  {data.length ? `No entries match ${filter}.` : 'Nothing logged yet. Decide on a suggestion in SUGG (F4); undecided ones land here when they expire.'}
                 </td>
               </tr>
             )}

@@ -14,7 +14,8 @@ export type Asset = 'BTC' | 'ETH' | 'SOL' | 'SILVER'
 export type Direction = 'LONG' | 'SHORT'
 /** Market environment from BTC/ETH trend. CHOPPY blocks new entries. */
 export type Regime = 'BULL' | 'BEAR' | 'CHOPPY'
-export type Planet = 'SUN' | 'MOON' | 'MERCURY' | 'VENUS' | 'MARS' | 'JUPITER' | 'SATURN' | 'URANUS' | 'NEPTUNE' | 'PLUTO'
+/** The 9 Vedic grahas (Rahu and Ketu are the lunar nodes). URANUS..PLUTO exist in the backend enum but are never used. */
+export type Planet = 'SUN' | 'MOON' | 'MERCURY' | 'VENUS' | 'MARS' | 'JUPITER' | 'SATURN' | 'RAHU' | 'KETU' | 'URANUS' | 'NEPTUNE' | 'PLUTO'
 export type Decision = 'TAKEN' | 'SKIPPED' | 'MODIFIED'
 export type ISODateTime = string
 
@@ -56,7 +57,22 @@ export interface JournalEntry {
   outcome_pnl: number | null // percent return on the position, e.g. 2.4 = +2.4%
 }
 
-export type TransitEventType = 'INGRESS' | 'STATION_RETROGRADE' | 'STATION_DIRECT'
+/** Vedic (Jyotish) events; see src/orbit/vedic/events.py. */
+export type TransitEventType =
+  | 'INGRESS'
+  | 'NAKSHATRA_INGRESS'
+  | 'STATION_RETROGRADE'
+  | 'STATION_DIRECT'
+  | 'YUTI'
+  | 'DRISHTI'
+  | 'COMBUSTION'
+  | 'GRAHA_YUDDHA'
+  | 'AMAVASYA'
+  | 'PURNIMA'
+  | 'SOLAR_ECLIPSE'
+  | 'LUNAR_ECLIPSE'
+  | 'YOGA'
+  | 'CLUSTER'
 export type SpeedClass = 'LUNAR' | 'FAST' | 'SLOW'
 export type Outcome = 'BIG_UP' | 'BIG_DOWN' | 'SIDEWAYS' | 'NEUTRAL'
 export type ConfidenceLabel = 'insufficient_data' | 'none' | 'weak' | 'moderate' | 'strong'
@@ -70,6 +86,9 @@ export interface TransitEvent {
   backward: boolean // ingress made while retrograde, back into the previous sign
   reentry: boolean // the forward ingress that follows a backward one
   exact_time: ISODateTime | null // the moment itself, to the second
+  other_planet: Planet | null // the second graha, for yuti / drishti / yuddha
+  retro_involved: boolean // a participating graha was vakri at the time
+  label: string // e.g. "Shani (Saturn) enters Meena (Pisces)"
 }
 
 export interface HorizonStatBase {
@@ -188,12 +207,18 @@ export interface RegimeReading {
   history: [ISODateTime, Regime][]
 }
 
+/** A graha's place in the sidereal (Vedic, Lahiri) zodiac right now. */
 export interface SkyPosition {
   planet: Planet
+  name: string // e.g. "Shani (Saturn)"
   longitude: number
-  sign: string
+  sign: string // rashi, e.g. "Meena (Pisces)"
   degree: number
-  retrograde: boolean
+  nakshatra: string
+  pada: number // 1-4
+  retrograde: boolean // vakri (always true for Rahu and Ketu)
+  combust: boolean // asta
+  dignity: string | null // uchcha / neecha
   next_event: TransitEvent | null
 }
 
@@ -292,8 +317,7 @@ export interface Tick {
   source: 'LIVE' | 'DELAYED'
 }
 
-// Contract for layers that aren't built yet (strategy, journal, backtest).
-// The screens for them are ready and read /api/system's components first.
+// ---------- strategy, journal, backtest ----------
 
 export interface SuggestionView {
   id: string
@@ -312,9 +336,11 @@ export interface DecisionRequest {
 
 export interface JournalRow {
   id: string
-  decided_at: ISODateTime
+  decided_at: ISODateTime // when you decided, or when it expired undecided
   entry: JournalEntry
-  counterfactual_pnl: number | null // what a SKIPPED suggestion would have returned
+  expired: boolean // no decision in time (logged as SKIPPED)
+  counterfactual_pnl: number | null // what a skipped/expired suggestion would have returned
+  exit_reason: 'target' | 'stop' | 'time' | null
 }
 
 export interface EquityPoint {
@@ -328,15 +354,100 @@ export interface DriftReport {
   status: 'OK' | 'WATCH' | 'DRIFT'
   z_score: number
   scale_down_at: number
+  min_trades: number // below this many live trades the status stays OK
   expected_win_rate: number
   live_win_rate: number
   expected_avg_r: number
   live_avg_r: number
-  expected_max_dd: number
+  expected_max_dd: number // in R
   live_max_dd: number
   backtest_trades: number
   live_trades: number
   curve: EquityPoint[]
+}
+
+export interface BacktestStats {
+  trades: number
+  open?: number
+  win_rate: number
+  avg_r: number
+  std_r: number
+  avg_return_pct: number
+  profit_factor: number | null
+  total_r: number
+  max_drawdown_r: number
+  avg_bars_held: number
+  exit_reasons: Record<'target' | 'stop' | 'time', number>
+  by_direction: Record<Direction, { trades: number; win_rate: number | null; avg_r: number | null }>
+  by_year: Record<string, { trades: number; wins: number; r: number }>
+  equity_r?: { date: string; r: number }[]
+}
+
+/** GET /api/backtest (src/orbit/backtest/engine.py). */
+export interface BacktestReport {
+  generated_at: ISODateTime
+  strategy: string
+  parameters: Record<string, unknown>
+  pooled: BacktestStats
+  assets: Record<string, BacktestStats>
+}
+
+/** GET /api/calibration: the feedback loop (src/orbit/strategy/calibrate.py). */
+export interface CalibrationReport {
+  trained_at: ISODateTime
+  features: string[]
+  n_backtest: number
+  n_live: number
+  base_win_rate: number | null
+  skill: boolean // beat the plain win rate out-of-sample; only then does it set confidence
+  note?: string
+  weights?: { feature: string; weight: number }[]
+  out_of_sample: {
+    n: number
+    brier: number
+    brier_base_rate: number
+    log_loss: number
+    log_loss_base_rate: number
+    auc: number | null
+    buckets: { predicted: number; actual: number; n: number }[]
+  } | null
+}
+
+export interface ModelScore {
+  n: number
+  log_loss: number
+  climatology_log_loss: number
+  skill: number // 1 - log loss / climatology log loss
+  brier: number
+  auc: number | null
+}
+
+/** GET /api/model/{asset}: does the Vedic sky add forecasting skill? (src/orbit/analysis/model.py) */
+export interface ModelReport {
+  asset: Asset
+  generated_at: ISODateTime
+  as_of: string
+  method: string
+  tech_features: string[]
+  vedic_features: number
+  retrain_years: number
+  summary: string
+  results: Record<
+    string,
+    {
+      target: 'big_up' | 'big_down' | 'sideways'
+      horizon_days: number
+      base_rate: number
+      scores: Record<string, ModelScore>
+      vedic_log_loss_gain: number
+      control_log_loss_gains: number[]
+      years_vedic_better: number
+      years: number
+      verdict: 'adds skill' | 'no added skill' | 'unclear'
+      top_vedic_features?: { state: string; description: string; weight: number }[]
+    }
+  >
+  forecast: Record<string, { TECH: number; 'TECH+VEDIC': number; base_rate: number }>
 }
 
 // ---------- analysis runs (analysis/jobs.py) ----------

@@ -4,9 +4,12 @@ every feature, and log a snapshot of the current state.
 This is deliberately the "thin" layer — it doesn't decide anything or
 compute any logic itself, it just wires together data/pipeline.py and
 features/pipeline.py on a schedule, and starts the daily analysis run
-(analysis/run.py, as its own process) at ANALYSIS_DAILY_AT_UTC. No trade suggestions happen here yet
-(that's the strategy layer, still to come) — right now this is purely
-the "always watching, always logging" backbone.
+(analysis/run.py, as its own process) at ANALYSIS_DAILY_AT_UTC. After each
+data refresh it also checks the strategy for a new RSI divergence on the
+latest completed bar, expires undecided suggestions and resolves outcomes
+(strategy/live.py), so the journal and drift check stay current, and once a
+day it syncs the shared data with GitHub (datasync.py) so the other machines
+can start from it.
 
 Design note for anyone maintaining this: a 24/7 process must never crash
 on a single bad cycle (a dropped API call, a rate limit, a network
@@ -20,6 +23,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
+from orbit import datasync
 from orbit.analysis import jobs
 from orbit.config.settings import ANALYSIS_DAILY_AT_UTC, ANALYSIS_SCHEDULE_ENABLED, DATA_DIR, PLACEBO_WEEKDAY, RUNNER_INTERVAL_SECONDS
 from orbit.core.types import Asset
@@ -66,8 +70,24 @@ def run_once(logger: logging.Logger) -> None:
     fetch_all_prices()
     fetch_all_ephemeris()
     compute_all_features()
+    from orbit.strategy import live
+
+    counts = live.refresh()
+    if any(counts.values()):
+        logger.info(f"Suggestions: {counts['new']} new, {counts['expired']} expired, {counts['resolved']} outcomes resolved.")
     _log_current_state(logger)
     logger.info("Cycle complete.")
+
+
+def _maybe_sync(logger: logging.Logger) -> None:
+    """Once a day, share this machine's data on GitHub and take the other machines'."""
+    if not datasync.DATA_SYNC_ENABLED or not datasync.due():
+        return
+    try:
+        result = datasync.sync()
+        (logger.warning if result.warning else logger.info)(result.summary())
+    except Exception as exc:
+        logger.warning(f"Data sync failed ({type(exc).__name__}: {exc}); will try again in {datasync.RETRY_HOURS_AFTER_ERROR} hours.")
 
 
 def _maybe_start_analysis(logger: logging.Logger, now: datetime, at, last_cycle_started: datetime | None) -> tuple[bool, datetime]:
@@ -115,6 +135,8 @@ def run_forever(interval_seconds: int = RUNNER_INTERVAL_SECONDS, schedule_analys
                 # must never take down a process meant to run 24/7.
                 logger.exception("Cycle failed, will retry next interval.")
                 status.mark_cycle_end(ok=False, error=f"{type(exc).__name__}: {exc}")
+            # Even after a failed cycle: a machine whose venue is blocked can still take the other machines' bars.
+            _maybe_sync(logger)
             next_data = datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
 
         if schedule_analysis:

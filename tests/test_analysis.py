@@ -6,7 +6,7 @@ import pytest
 
 from orbit.analysis import confidence
 from orbit.analysis.outcomes import BIG_DOWN, BIG_UP, SIDEWAYS, label_outcomes
-from orbit.analysis.series import PlanetSeries, PriceSeries
+from orbit.analysis.series import PriceSeries
 from orbit.analysis.significance import (
     benjamini_hochberg,
     episodes,
@@ -14,14 +14,8 @@ from orbit.analysis.significance import (
     shift_null_counts,
     shift_p_value,
 )
-from orbit.analysis.transit_events import debounce, detect_ingresses, detect_stations
 from orbit.core.types import Asset, Candle, ConfidenceLabel, Planet, TransitEventType
 from orbit.data.history import StitchError, stitch
-
-
-def _planet(signs, retro, planet=Planet.MARS) -> PlanetSeries:
-    dates = np.arange(np.datetime64("2020-01-01"), np.datetime64("2020-01-01") + np.timedelta64(len(signs), "D"), dtype="datetime64[D]")
-    return PlanetSeries(planet, dates, np.array(signs), np.array(retro, dtype=bool))
 
 
 def _random_walk(n=3000, seed=1) -> PriceSeries:
@@ -31,28 +25,6 @@ def _random_walk(n=3000, seed=1) -> PriceSeries:
     low = close * (1 - np.abs(rng.normal(0, 0.01, n)))
     dates = np.arange(np.datetime64("2010-01-01"), np.datetime64("2010-01-01") + np.timedelta64(n, "D"), dtype="datetime64[D]")
     return PriceSeries(Asset.BTC, dates, close.copy(), high, low, close)
-
-
-# ---------------------------------------------------------------- events
-
-
-def test_ingress_marks_backward_and_reentry():
-    # Aries(0) -> Taurus(1) -> back to Aries -> Taurus again -> Gemini(2)
-    signs = [0] * 5 + [1] * 5 + [0] * 5 + [1] * 5 + [2] * 5
-    events = detect_ingresses(_planet(signs, [False] * 25))
-    kinds = [(e.to_state, e.backward, e.reentry) for e in events]
-    assert kinds == [("Taurus", False, False), ("Aries", True, False), ("Taurus", False, True), ("Gemini", False, False)]
-
-
-def test_station_flicker_is_debounced():
-    retro = [False] * 10 + [True] + [False] * 2 + [True] * 20 + [False] * 10
-    assert debounce(np.array(retro)).tolist().count(True) == 20
-    stations = detect_stations(_planet([0] * len(retro), retro))
-    assert [s.event_type for s in stations] == [TransitEventType.STATION_RETROGRADE, TransitEventType.STATION_DIRECT]
-
-
-def test_sun_never_stations():
-    assert detect_stations(_planet([0] * 20, [True] * 10 + [False] * 10, Planet.SUN)) == []
 
 
 # ---------------------------------------------------------------- outcomes
@@ -154,7 +126,7 @@ def test_stitch_refuses_disagreeing_venues():
         stitch(_candles(0, [100.0] * 20, "old"), _candles(10, [120.0] * 20, "new"))
 
 
-# ---------------------------------------------------------------- exact moments and timing
+# ---------------------------------------------------------------- timing
 
 from datetime import datetime as _dt  # noqa: E402
 
@@ -162,20 +134,8 @@ from orbit.analysis import exact_times, timing  # noqa: E402
 from orbit.core.types import TransitEvent  # noqa: E402
 
 
-def test_exact_ingress_lands_on_the_sign_boundary():
-    # Mars enters Leo in late September 2026 (detected on the day after it happens).
-    e = TransitEvent(planet=Planet.MARS, event_type=TransitEventType.INGRESS, date=_dt(2026, 9, 29, tzinfo=timezone.utc), from_state="Cancer", to_state="Leo")
-    [refined] = exact_times.refine([e])
-    assert refined.exact_time is not None
-    assert e.date - timedelta(days=1) <= refined.exact_time <= e.date
-    assert refined.date == refined.exact_time.replace(hour=0, minute=0, second=0)  # re-dated to the real day
-    tt = exact_times._jd([refined.exact_time])
-    lon = exact_times._longitude(Planet.MARS, tt)[0]
-    assert abs(exact_times._wrap(lon - 120.0)) < 1e-3  # Leo starts at 120 degrees
-
-
 def test_shift_moves_exact_times_too():
-    e = TransitEvent(planet=Planet.SUN, event_type=TransitEventType.INGRESS, date=_dt(2020, 1, 2, tzinfo=timezone.utc), from_state="Sagittarius", to_state="Capricorn", exact_time=_dt(2020, 1, 1, 10, 30, tzinfo=timezone.utc))
+    e = TransitEvent(planet=Planet.SUN, event_type=TransitEventType.INGRESS, date=_dt(2020, 1, 2, tzinfo=timezone.utc), from_state="Dhanu", to_state="Makara", exact_time=_dt(2020, 1, 1, 10, 30, tzinfo=timezone.utc))
     [s] = exact_times.shift([e], 10)
     assert s.date == e.date + timedelta(days=10) and s.exact_time == e.exact_time + timedelta(days=10)
 

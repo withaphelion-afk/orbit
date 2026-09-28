@@ -9,10 +9,12 @@ everything else only talks to Candle objects.
 from __future__ import annotations
 
 import csv
+import io
 from pathlib import Path
 
 from orbit.config.settings import DATA_DIR
 from orbit.core.types import Asset, Candle, EphemerisSnapshot, Planet
+from orbit.fsutil import atomic_write_text
 
 
 def _csv_path(asset: Asset, timeframe: str) -> Path:
@@ -22,30 +24,30 @@ def _csv_path(asset: Asset, timeframe: str) -> Path:
 def save_candles(candles: list[Candle], timeframe: str) -> Path:
     """Write candles to CSV, overwriting any existing file for that asset+timeframe.
 
-    Assumes all candles passed in are for the same asset.
+    Assumes all candles passed in are for the same asset. The write is atomic,
+    so the API, the analysis and the data sync never read half a file.
     """
     if not candles:
         raise ValueError("no candles to save")
 
     asset = candles[0].asset
     path = _csv_path(asset, timeframe)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["timestamp", "open", "high", "low", "close", "volume", "source"])
-        for candle in candles:
-            writer.writerow(
-                [
-                    candle.timestamp.isoformat(),
-                    candle.open,
-                    candle.high,
-                    candle.low,
-                    candle.close,
-                    candle.volume,
-                    candle.source,
-                ]
-            )
+    out = io.StringIO(newline="")
+    writer = csv.writer(out)
+    writer.writerow(["timestamp", "open", "high", "low", "close", "volume", "source"])
+    for candle in candles:
+        writer.writerow(
+            [
+                candle.timestamp.isoformat(),
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume,
+                candle.source,
+            ]
+        )
+    atomic_write_text(path, out.getvalue())
     return path
 
 

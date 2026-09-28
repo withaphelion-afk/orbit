@@ -43,3 +43,20 @@ def true_range(high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarr
     tr = np.nanmax(np.vstack([high - low, np.abs(high - prev), np.abs(low - prev)]), axis=0)
     tr[0] = high[0] - low[0]
     return tr
+
+
+def wilder_rsi(close: np.ndarray, n: int = 14) -> np.ndarray:
+    """Wilder's RSI (the standard one), NaN for the first n bars."""
+    close = np.asarray(close, dtype=float)
+    out = np.full(len(close), np.nan)
+    if len(close) <= n:
+        return out
+    d = np.diff(close)
+    gain, loss = np.maximum(d, 0), np.maximum(-d, 0)
+    g, l = gain[:n].mean(), loss[:n].mean()
+    out[n] = 100 - 100 / (1 + g / l) if l > 0 else 100.0
+    for i in range(n + 1, len(close)):
+        g = (g * (n - 1) + gain[i - 1]) / n
+        l = (l * (n - 1) + loss[i - 1]) / n
+        out[i] = 100 - 100 / (1 + g / l) if l > 0 else 100.0
+    return out

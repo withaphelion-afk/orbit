@@ -12,7 +12,8 @@ const MODES: { label: string; value: ChartMode }[] = [
   { label: 'LIVE', value: 'LIVE' },
   { label: 'ORBIT', value: 'ORBIT' },
 ]
-const SLOW = new Set(['JUPITER', 'SATURN', 'URANUS', 'NEPTUNE', 'PLUTO'])
+const SLOW = new Set(['JUPITER', 'SATURN', 'RAHU', 'KETU'])
+const ALWAYS = new Set(['STATION_RETROGRADE', 'STATION_DIRECT', 'SOLAR_ECLIPSE', 'LUNAR_ECLIPSE'])
 
 export function ChartPanel({ hidden }: { hidden: boolean }) {
   const asset = useTerminal((s) => s.asset)
@@ -54,13 +55,15 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
   )
 }
 
-/** Which transits to mark: every station, slow-planet ingresses, and anything the
- * playbook rates weak or better for this asset. Fast ingresses alone would
- * bury the chart (~40 a year). */
+/** Which Vedic events to mark: every station (vakri / margi) and eclipse, the slow
+ * grahas' rashi changes (Guru, Shani, Rahu, Ketu), and anything the playbook rates
+ * weak or better for this asset. Everything else (hundreds of drishti, yuti and
+ * nakshatra changes a year) would bury the chart. */
 function markable(v: TransitView, asset: string) {
   const e = v.event
-  if (e.planet === 'MOON') return false
-  return e.event_type !== 'INGRESS' || SLOW.has(e.planet) || v.notable.some((n) => n.asset === asset)
+  if (v.notable.some((n) => n.asset === asset)) return true
+  if (ALWAYS.has(e.event_type)) return e.planet !== 'RAHU' && e.planet !== 'KETU'
+  return e.event_type === 'INGRESS' && SLOW.has(e.planet) && e.planet !== 'KETU' // Ketu mirrors Rahu
 }
 
 function OrbitChartData() {
@@ -68,7 +71,8 @@ function OrbitChartData() {
   const candles = useCandles(asset)
   const signals = useSignals(asset)
   const first = candles.data?.[0]?.timestamp
-  const transits = useTransits(first, new Date().toISOString())
+  // End at today's date, not "now": a timestamp that changes every render would refetch in a loop.
+  const transits = useTransits(first, `${new Date().toISOString().slice(0, 10)}T23:59:59Z`)
   const { components } = useComponents()
   const suggestions = useSuggestions(!!components?.strategy)
   const marks = useMemo(() => (transits.data ?? []).filter((v) => markable(v, asset)), [transits.data, asset])
