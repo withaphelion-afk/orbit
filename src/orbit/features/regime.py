@@ -35,37 +35,6 @@ _REGIME_VALUE = {Regime.BULL: 1.0, Regime.BEAR: -1.0, Regime.CHOPPY: 0.0}
 VALUE_TO_REGIME = {v: k for k, v in _REGIME_VALUE.items()}
 
 
-def simple_moving_average(candles: list[Candle], window: int) -> float:
-    """Average close price over the last `window` candles."""
-    if len(candles) < window:
-        raise ValueError(f"need at least {window} candles, got {len(candles)}")
-    closes = [c.close for c in candles[-window:]]
-    return sum(closes) / window
-
-
-def _trend_for(candles: list[Candle]) -> Regime:
-    """Trend read for a single asset's candles, oldest-first."""
-    sma_short = simple_moving_average(candles, SHORT_WINDOW)
-    sma_long = simple_moving_average(candles, LONG_WINDOW)
-    last_close = candles[-1].close
-
-    if last_close > sma_short > sma_long:
-        return Regime.BULL
-    if last_close < sma_short < sma_long:
-        return Regime.BEAR
-    return Regime.CHOPPY
-
-
-def compute_regime(btc_candles: list[Candle], eth_candles: list[Candle]) -> Regime:
-    """The shared regime gate: BTC and ETH trend must agree, else CHOPPY."""
-    btc_trend = _trend_for(btc_candles)
-    eth_trend = _trend_for(eth_candles)
-
-    if btc_trend == eth_trend:
-        return btc_trend
-    return Regime.CHOPPY
-
-
 def trend_values(close: np.ndarray) -> np.ndarray:
     """Per-day trend as +1 (BULL) / -1 (BEAR) / 0 (CHOPPY); NaN before LONG_WINDOW bars exist."""
     close = np.asarray(close, dtype=float)

@@ -1,27 +1,33 @@
+import { lazy, Suspense, useState } from 'react'
 import { CommandBar } from './components/CommandBar'
 import { FunctionBar } from './components/FunctionBar'
 import { Palette } from './components/Palette'
 import { useLiveFeed } from './hooks/useLiveFeed'
 import { useTerminalKeys } from './hooks/useTerminalKeys'
-import { AstroPanel } from './panels/AstroPanel'
 import { ChartPanel } from './panels/ChartPanel'
-import { DriftPanel } from './panels/DriftPanel'
-import { HelpPanel } from './panels/HelpPanel'
-import { JournalPanel } from './panels/JournalPanel'
-import { SuggestionsPanel } from './panels/SuggestionsPanel'
-import { SystemPanel } from './panels/SystemPanel'
 import { WatchlistPanel } from './panels/WatchlistPanel'
 import { useTerminal } from './state/store'
 
+// Loaded the first time their function key is pressed, so the opening screen
+// downloads less and doesn't fetch data for screens you haven't opened.
+const SuggestionsPanel = lazy(() => import('./panels/SuggestionsPanel').then((m) => ({ default: m.SuggestionsPanel })))
+const JournalPanel = lazy(() => import('./panels/JournalPanel').then((m) => ({ default: m.JournalPanel })))
+const DriftPanel = lazy(() => import('./panels/DriftPanel').then((m) => ({ default: m.DriftPanel })))
+const AstroPanel = lazy(() => import('./panels/AstroPanel').then((m) => ({ default: m.AstroPanel })))
+const SystemPanel = lazy(() => import('./panels/SystemPanel').then((m) => ({ default: m.SystemPanel })))
+const HelpPanel = lazy(() => import('./panels/HelpPanel').then((m) => ({ default: m.HelpPanel })))
+
 /**
- * The terminal. Every panel stays mounted and is hidden rather than
- * unmounted, so switching functions never reloads the live chart or loses a
- * half-typed decision note.
+ * The terminal. A panel is mounted the first time its function is opened and
+ * then stays mounted, hidden rather than unmounted, so switching functions
+ * never reloads the live chart or loses a half-typed decision note.
  */
 export function App() {
   useLiveFeed()
   useTerminalKeys()
   const view = useTerminal((s) => s.view)
+  const [opened, setOpened] = useState(() => new Set([view]))
+  if (!opened.has(view)) setOpened(new Set(opened).add(view))
 
   return (
     <div className="term">
@@ -29,12 +35,14 @@ export function App() {
       <main className={`main ${view === 'MON' ? 'mon' : 'max'}`}>
         <ChartPanel hidden={view !== 'MON' && view !== 'GP'} />
         <WatchlistPanel hidden={view !== 'MON'} />
-        <SuggestionsPanel hidden={view !== 'SUGG'} />
-        <JournalPanel hidden={view !== 'JRNL'} />
-        <DriftPanel hidden={view !== 'DRIFT'} />
-        <AstroPanel hidden={view !== 'ASTRO'} />
-        <SystemPanel hidden={view !== 'SYS'} />
-        <HelpPanel hidden={view !== 'HELP'} />
+        <Suspense fallback={null}>
+          {opened.has('SUGG') && <SuggestionsPanel hidden={view !== 'SUGG'} />}
+          {opened.has('JRNL') && <JournalPanel hidden={view !== 'JRNL'} />}
+          {opened.has('DRIFT') && <DriftPanel hidden={view !== 'DRIFT'} />}
+          {opened.has('ASTRO') && <AstroPanel hidden={view !== 'ASTRO'} />}
+          {opened.has('SYS') && <SystemPanel hidden={view !== 'SYS'} />}
+          {opened.has('HELP') && <HelpPanel hidden={view !== 'HELP'} />}
+        </Suspense>
       </main>
       <FunctionBar />
       <Palette />

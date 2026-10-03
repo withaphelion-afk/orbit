@@ -14,7 +14,6 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
 from fastapi import FastAPI, HTTPException, Query, WebSocket
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles

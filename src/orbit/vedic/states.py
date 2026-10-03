@@ -17,7 +17,6 @@ instant a daily bar opens.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import numpy as np
 
@@ -110,8 +109,3 @@ def on_dates(states: States, dates: np.ndarray, include_moon: bool = True) -> di
         for sid, (desc, m) in states.masks.items()
         if include_moon or sid not in states.moon_driven
     }
-
-
-def today_utc_index(states: States) -> int:
-    today = np.datetime64(datetime.now(timezone.utc).date(), "D")
-    return int((today - states.days[0]).astype(int))

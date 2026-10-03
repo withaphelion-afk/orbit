@@ -88,10 +88,11 @@ def test_rahu_ketu_are_opposite_and_have_no_7th_drishti(events_2024_2026):
 
 
 def test_drishti_rules():
-    assert z.drishti_houses(Planet.SATURN) == (7, 3, 10)
-    assert z.drishti_houses(Planet.MARS) == (7, 4, 8)
-    assert z.drishti_houses(Planet.JUPITER) == (7, 5, 9)
-    assert z.drishti_houses(Planet.VENUS) == (7,)
+    # Every graha casts the 7th; these add special drishti.
+    assert z.SPECIAL_DRISHTI[Planet.SATURN] == (3, 10)
+    assert z.SPECIAL_DRISHTI[Planet.MARS] == (4, 8)
+    assert z.SPECIAL_DRISHTI[Planet.JUPITER] == (5, 9)
+    assert Planet.VENUS not in z.SPECIAL_DRISHTI
     assert z.dignity(Planet.SATURN, z.RASHIS.index("Tula")) == "uchcha (exalted)"
     assert z.dignity(Planet.MARS, z.RASHIS.index("Karka")) == "neecha (debilitated)"
     assert [z.ordinal(n) for n in (3, 4, 5, 10, 11, 21)] == ["3rd", "4th", "5th", "10th", "11th", "21st"]

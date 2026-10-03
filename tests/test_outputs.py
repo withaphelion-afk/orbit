@@ -51,3 +51,20 @@ def test_republish_replaces_instead_of_growing_history(tmp_path, monkeypatch):
     dst = tmp_path / "dst"
     outputs.fetch(dst)
     assert (dst / "analysis" / "meta.json").read_text(encoding="utf-8") == '{"run": 2}'
+
+
+def test_site_branch_is_one_commit_with_exactly_the_snapshot(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    site = tmp_path / "site"
+    _write(site / "quotes.json", "[1]")
+    _write(site / "hourly" / "BTC" / "2026.json", "[]")
+    assert outputs.publish_site(site) == 2
+    (site / "hourly" / "BTC" / "2026.json").unlink()
+    _write(site / "quotes.json", "[2]")
+    assert outputs.publish_site(site) == 1
+
+    remote = outputs._remote_url()
+    git = lambda *a: subprocess.run(["git", "--git-dir", remote, *a], capture_output=True, text=True, check=True).stdout
+    assert git("rev-list", "--count", outputs.SITE_BRANCH).strip() == "1"
+    assert sorted(git("ls-tree", "-r", "--name-only", outputs.SITE_BRANCH).split()) == [".gitattributes", "quotes.json"]
+    assert git("show", f"{outputs.SITE_BRANCH}:quotes.json") == "[2]"

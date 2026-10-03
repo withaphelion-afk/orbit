@@ -43,11 +43,24 @@ Set `ORBIT_API_TARGET` in `web/.env.local` if the API runs somewhere other
 than `127.0.0.1:8000`. For a production build served from a different origin,
 set `VITE_ORBIT_API_BASE`.
 
+### The cloud build (static, installable)
+
+`VITE_ORBIT_STATIC=1 npm run build` builds the terminal with no server behind
+it, as deployed to Vercel (`.github/workflows/deploy-web.yml`).
+`src/api/static.ts` reads every API answer from the `site` branch of the
+private data repo (`VITE_ORBIT_DATA_REPO`) through GitHub with the viewer's
+token, and starts the `decide` / `analysis` workflows of `VITE_ORBIT_GITHUB_REPO`
+for Take/Skip/Modify and RUN ANALYSIS. Live crypto prices come from Binance's
+public mirror in the browser. The screens can't tell which client they have.
+
+The app is installable (`public/manifest.webmanifest`, icons, and `public/sw.js`,
+which caches only the app's own files, never data).
+
 ## Layout
 
 ```
 src/
-  api/          types.ts (mirrors the backend), http.ts (client), hooks.ts (queries)
+  api/          types.ts (mirrors the backend), http.ts (live API) / static.ts (cloud), hooks.ts (queries)
   state/        store.ts: view, active asset, live prices, toast, runCommand()
   hooks/        terminal keys, live price feed, clock
   lib/          command parser, formatting, indicators, decision validation
@@ -57,8 +70,10 @@ src/
   config.ts     assets, price decimals, TradingView symbols
 ```
 
-Panels stay mounted and are only hidden when you switch functions. That way
-the live chart never reloads.
+A panel loads the first time its function is opened (its code is a separate
+chunk) and then stays mounted, only hidden when you switch functions. That way
+the live chart never reloads and a half-typed note survives. Orbit's own chart
+library loads only in ORBIT chart mode.
 
 ## Screens
 
