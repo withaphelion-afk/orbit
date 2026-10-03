@@ -16,11 +16,11 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { Check, MousePointerClick, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Check, MousePointerClick, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBars, useDivergenceModel, useDivergences, useLabelDivergence, useRegime } from '../../api/hooks'
 import type { Asset, BarRow, DivergenceCandidate, SuggestionView, Timeframe } from '../../api/types'
-import { QueryState } from '../../components/bits'
+import { Empty, Pill, QueryState } from '../../components/bits'
 import { ASSET_META } from '../../config'
 import { BINANCE_SYMBOL, fetchKlines, subscribeKlines } from '../../lib/binance'
 import { find, rsi, type Candidate } from '../../lib/divergence'
@@ -195,56 +195,85 @@ export function OrbitChart({ asset, tf, pending }: Props) {
       <div className="dv-chart">
         <Canvas asset={asset} bars={bars} drawn={shown} pending={pending?.timeframe === tf ? pending : undefined} markMode={markMode} onPick={onPick} />
         <div className="dv-legend">
-          <span>{live ? 'LIVE · Binance' : 'Orbit bars · updates hourly'}</span>
+          <span>{live ? 'Live · Binance' : 'Orbit bars · hourly'}</span>
           <span>RSI(14) · 70/30</span>
-          <span>{model ? (model.trusted ? 'Model: trusted' : 'Model: unproven') : 'Model: not trained yet'}</span>
-          {threshold !== undefined && <span>Alert ≥ {pct(threshold)}</span>}
+          {model ? <Pill tone={model.trusted ? 'ok' : 'watch'}>{model.trusted ? 'MODEL TRUSTED' : 'MODEL UNPROVEN'}</Pill> : <span>Model not trained yet</span>}
+          {threshold !== undefined && <span>Alerts at ≥ {pct(threshold)}</span>}
         </div>
       </div>
       <aside className="dv-list">
         <div className="dv-list-head">
-          <b>Divergences · {TF_LABEL[tf]}</b>
+          <span className="dv-title">Divergences · {TF_LABEL[tf]}</span>
           <button
             type="button"
-            className={`dv-mark ${markMode ? 'on' : ''}`}
+            className={`act mod dv-mark ${markMode ? 'on' : ''}`}
             onClick={() => {
               setMarkMode(!markMode)
               setMarking([])
             }}
             title="Click the two swing points (lows for bullish, highs for bearish) of a divergence the detector missed"
           >
-            <MousePointerClick size={14} strokeWidth={1.75} /> {markMode ? `Click swing ${marking.length + 1} of 2` : 'Mark one it missed'}
+            <MousePointerClick size={14} strokeWidth={1.75} /> {markMode ? `Click swing ${marking.length + 1} of 2` : 'Mark missed'}
           </button>
         </div>
-        {!list.length && <p className="dim dv-empty">No confirmed divergence above the alert threshold, none forming, and none labelled in view.</p>}
-        <ul>
-          {list.map((d) => (
-            <li key={d.id} className={`${d.c.direction === 'LONG' ? 'up' : 'down'} ${d.forming ? 'forming' : ''}`}>
-              <div className="dv-row1">
-                <b>{d.c.direction === 'LONG' ? 'Bullish' : 'Bearish'}</b> <span className="dim">{d.c.kind}</span>
-                <span className="dv-score" title={model?.trusted ? 'The model has beaten the plain rate out-of-sample' : 'Unproven: the model hasn’t beaten the plain rate yet'}>
-                  {d.score === null ? '—' : pct(d.score)}
-                  {!model?.trusted && <i> unproven</i>}
-                </span>
-              </div>
-              <div className="dv-row2 dim">
-                {d.forming ? 'forming · ' : ''}
-                {new Date(d.t1 * 1000).toISOString().slice(5, 16).replace('T', ' ')} → {new Date(d.t2 * 1000).toISOString().slice(5, 16).replace('T', ' ')} · RSI {d.c.r1.toFixed(1)} →{' '}
-                {d.c.r2.toFixed(1)} · {price(asset, d.c.p1)} → {price(asset, d.c.p2)}
-                {d.outcome && <span className={d.outcome === 'worked' ? 'up' : 'down'}> · {d.outcome}</span>}
-              </div>
-              <div className="dv-teach">
-                <button type="button" className={d.you === 'real' ? 'on' : ''} onClick={() => teach(d, 'real')} disabled={label.isPending} title="✓ A real divergence">
-                  <Check size={13} strokeWidth={2} /> real
-                </button>
-                <button type="button" className={d.you === 'not' ? 'on' : ''} onClick={() => teach(d, 'not')} disabled={label.isPending} title="✗ Not a real divergence">
-                  <X size={13} strokeWidth={2} /> not real
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        {!list.length ? (
+          <Empty title="NOTHING TO SHOW">
+            <span>No confirmed divergence above the alert threshold, none forming, and none labelled in view.</span>
+          </Empty>
+        ) : (
+          <div className="dv-rows">
+            {list.map((d) => (
+              <DivergenceRow key={d.id} asset={asset} d={d} trusted={!!model?.trusted} busy={label.isPending} onTeach={(v) => teach(d, v)} />
+            ))}
+          </div>
+        )}
       </aside>
+    </div>
+  )
+}
+
+const when = (t: number) => new Date(t * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })
+
+/** One divergence in the list: direction, kind, score with its honesty label, the two swings, and ✓/✗. */
+function DivergenceRow({ asset, d, trusted, busy, onTeach }: { asset: Asset; d: Drawn; trusted: boolean; busy: boolean; onTeach: (v: 'real' | 'not') => void }) {
+  const up = d.c.direction === 'LONG'
+  return (
+    <div className={`dv-row ${up ? 'long' : 'short'} ${d.forming ? 'forming' : ''}`}>
+      <div className="dv-top">
+        <span className={`dv-dir ${up ? 'up' : 'down'}`}>
+          {up ? <ArrowUpRight size={15} strokeWidth={2} aria-hidden="true" /> : <ArrowDownRight size={15} strokeWidth={2} aria-hidden="true" />}
+          {up ? 'Bullish' : 'Bearish'}
+        </span>
+        <span className="dv-kind">{d.c.kind}</span>
+        <span className="dv-score">{d.score === null ? '—' : pct(d.score)}</span>
+      </div>
+      <div className="dv-tags">
+        {d.forming && <Pill tone="off">FORMING</Pill>}
+        {!trusted && <Pill tone="watch" title="The model hasn't beaten the plain rate on data it hasn't seen yet">UNPROVEN</Pill>}
+        {d.outcome && <em className={`pill dv-outcome ${d.outcome}`}>{d.outcome.toUpperCase()}</em>}
+      </div>
+      <dl className="dv-facts">
+        <dt>Swings</dt>
+        <dd>
+          {when(d.t1)} → {when(d.t2)}
+        </dd>
+        <dt>Price</dt>
+        <dd>
+          {price(asset, d.c.p1)} → {price(asset, d.c.p2)}
+        </dd>
+        <dt>RSI</dt>
+        <dd>
+          {d.c.r1.toFixed(1)} → {d.c.r2.toFixed(1)}
+        </dd>
+      </dl>
+      <div className="dv-teach">
+        <button type="button" className={`act take ${d.you === 'real' ? 'on' : ''}`} onClick={() => onTeach('real')} disabled={busy} title="✓ A real divergence">
+          <Check size={14} strokeWidth={2} /> Real
+        </button>
+        <button type="button" className={`act skip ${d.you === 'not' ? 'on' : ''}`} onClick={() => onTeach('not')} disabled={busy} title="✗ Not a real divergence">
+          <X size={14} strokeWidth={2} /> Not real
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,8 +1,8 @@
-import { BellRing, Check, ShieldAlert, ShieldCheck, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, BellRing, Check, ShieldAlert, ShieldCheck, X } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { useAlerts, useDivergenceModel, useLabelDivergence } from '../api/hooks'
 import type { AlertItem, Timeframe } from '../api/types'
-import { Empty, QueryState, StatCard, StatGrid } from '../components/bits'
+import { Empty, Pill, QueryState, StatCard, StatGrid } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META, type TvInterval } from '../config'
 import { ago, pct, price } from '../lib/format'
@@ -86,30 +86,39 @@ export function AlertsPanel({ hidden }: { hidden: boolean }) {
         )
       ) : (
         <div className="alerts-list">
-          {alerts.map((a) => (
-            <div key={a.id} className={`alert-row ${seen.includes(a.id) ? '' : 'unseen'}`}>
-              <button type="button" className="linkish" onClick={() => open(a)} title="Open on the ORBIT chart">
-                <b>{ASSET_META[a.asset].label}</b> {TF_LABEL[a.timeframe]}
-              </button>
-              <span className={a.direction === 'LONG' ? 'up' : 'down'}>{a.direction}</span>
-              <span className="dim">{a.kind}</span>
-              <span className="mono">
-                {price(a.asset, a.p1)} → {price(a.asset, a.p2)} · RSI {a.r1.toFixed(1)} → {a.r2.toFixed(1)}
-              </span>
-              <span>
-                <b>{a.score === null ? '—' : pct(a.score)}</b> {!a.trusted && <span className="warn">unproven</span>}
-                <div className="dim">{a.confirmed_at ? `${ago(a.confirmed_at * 1000)} ago` : ''}</div>
-              </span>
-              <span className="dv-teach">
-                <button type="button" className={a.you === 'real' ? 'on' : ''} onClick={() => teach(a, 'real')} disabled={label.isPending}>
-                  <Check size={13} strokeWidth={2} /> real
+          {alerts.map((a) => {
+            const up = a.direction === 'LONG'
+            return (
+              <div key={a.id} className={`alert-row ${seen.includes(a.id) ? '' : 'unseen'}`}>
+                <button type="button" className="alert-main" onClick={() => open(a)} title="Open on the ORBIT chart">
+                  <span className="alert-asset">
+                    <b>{ASSET_META[a.asset].label}</b>
+                    <span className="alert-tf">{TF_LABEL[a.timeframe]}</span>
+                  </span>
+                  <span className={`dv-dir ${up ? 'up' : 'down'}`}>
+                    {up ? <ArrowUpRight size={15} strokeWidth={2} aria-hidden="true" /> : <ArrowDownRight size={15} strokeWidth={2} aria-hidden="true" />}
+                    {up ? 'Bullish' : 'Bearish'} <span className="dv-kind">{a.kind}</span>
+                  </span>
+                  <span className="alert-facts">
+                    {price(a.asset, a.p1)} → {price(a.asset, a.p2)} · RSI {a.r1.toFixed(1)} → {a.r2.toFixed(1)}
+                  </span>
+                  <span className="alert-score">
+                    <span className="dv-score">{a.score === null ? '—' : pct(a.score)}</span>
+                    {!a.trusted && <Pill tone="watch">UNPROVEN</Pill>}
+                    <span className="alert-ago">{a.confirmed_at ? `${ago(a.confirmed_at * 1000)} ago` : ''}</span>
+                  </span>
                 </button>
-                <button type="button" className={a.you === 'not' ? 'on' : ''} onClick={() => teach(a, 'not')} disabled={label.isPending}>
-                  <X size={13} strokeWidth={2} /> not
-                </button>
-              </span>
-            </div>
-          ))}
+                <span className="dv-teach">
+                  <button type="button" className={`act take ${a.you === 'real' ? 'on' : ''}`} onClick={() => teach(a, 'real')} disabled={label.isPending}>
+                    <Check size={14} strokeWidth={2} /> Real
+                  </button>
+                  <button type="button" className={`act skip ${a.you === 'not' ? 'on' : ''}`} onClick={() => teach(a, 'not')} disabled={label.isPending}>
+                    <X size={14} strokeWidth={2} /> Not real
+                  </button>
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
     </Panel>
