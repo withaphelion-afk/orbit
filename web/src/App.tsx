@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { CommandBar } from './components/CommandBar'
 import { FunctionBar } from './components/FunctionBar'
 import { Palette } from './components/Palette'
+import { TokenGate } from './components/TokenGate'
 import { useLiveFeed } from './hooks/useLiveFeed'
 import { useTerminalKeys } from './hooks/useTerminalKeys'
 import { ChartPanel } from './panels/ChartPanel'
@@ -24,6 +25,14 @@ const HelpPanel = lazy(() => import('./panels/HelpPanel').then((m) => ({ default
  * never reloads the live chart or loses a half-typed decision note.
  */
 export function App() {
+  return (
+    <TokenGate>
+      <Terminal />
+    </TokenGate>
+  )
+}
+
+function Terminal() {
   useLiveFeed()
   useTerminalKeys()
   const view = useTerminal((s) => s.view)

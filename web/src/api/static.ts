@@ -30,6 +30,22 @@ import type {
 } from './types'
 
 const TOKEN_KEY = 'orbit.githubToken'
+const TOKEN_EVENT = 'orbit-token-changed'
+// Tells the token screen; no-op where there is no window (tests).
+const announce = () => typeof window !== 'undefined' && window.dispatchEvent(new Event(TOKEN_EVENT))
+
+/** The saved GitHub token (static build only), and setting it from the app's token screen. */
+export function hasToken(): boolean {
+  return !!load<string>(TOKEN_KEY, '')
+}
+export function setToken(value: string): void {
+  save(TOKEN_KEY, value.trim())
+  announce()
+}
+export function onTokenChange(cb: () => void): () => void {
+  window.addEventListener(TOKEN_EVENT, cb)
+  return () => window.removeEventListener(TOKEN_EVENT, cb)
+}
 const DECIDED_KEY = 'orbit.decided' // suggestion id -> when you decided, until the snapshot catches up
 const RUN_KEY = 'orbit.startedRun'
 const CATCH_UP_MS = 30 * 60_000
@@ -77,30 +93,18 @@ export interface StaticSource {
 
 export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (...a) => fetch(...a)): OrbitApi {
   const { dataRepo, codeRepo, branch = 'site' } = source
-  let declined = false
 
+  // The app's own token screen (TokenGate) collects it: a browser pop-up is blocked on many phones and installed apps.
   const token = (): string => {
     const saved = load<string>(TOKEN_KEY, '')
     if (saved) return saved
-    if (declined) throw new ApiError(401, 'No GitHub token, so there is nothing to show. Reload the page to enter one.')
-    const entered = (
-      window.prompt(
-        `Orbit reads your data from ${dataRepo} and acts through ${codeRepo}. Paste a GitHub fine-grained token with ` +
-          `"Contents: Read" on ${dataRepo} and "Actions: Read and write" on ${codeRepo}. It is kept only in this browser.`,
-      ) ?? ''
-    ).trim()
-    if (!entered) {
-      declined = true
-      throw new ApiError(401, 'No GitHub token entered, so there is nothing to show. Reload the page to enter one.')
-    }
-    save(TOKEN_KEY, entered)
-    return entered
+    throw new ApiError(401, 'Not connected: enter a GitHub token to read your data.')
   }
 
   const refused = (status: number): ApiError => {
     save(TOKEN_KEY, '')
-    declined = true // the other screens' requests would each ask again; one ask per page load
-    return new ApiError(status, 'GitHub refused the token (expired, or missing a permission). It was forgotten: reload to enter another.')
+    announce() // brings the token screen back
+    return new ApiError(status, 'GitHub refused the token (expired, or missing a permission). Enter another.')
   }
 
   const cache = new Map<string, { at: number; value: Promise<unknown> }>()
