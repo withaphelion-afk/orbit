@@ -208,29 +208,32 @@ Everything runs on free services, and no machine has to stay on:
 
 ### One-time setup
 
-The repo owner (`withaphelion-afk`) does this, because tokens can only reach repos their owner controls. Never paste a token into a chat or a file. Put it only in the secret fields below.
+The repo owner (`withaphelion-afk`) does this, because tokens can only reach repos their owner controls. Never paste a token into a chat or a file: only into the prompts and secret fields below.
 
-1. **Create the data repo.** On GitHub: New repository → `orbit-data` → **Private**, no README. Then, from a machine with this repo cloned, move the existing data there:
+1. **The data repo** (done on 3 Oct 2026, kept here to rebuild it): a private `withaphelion-afk/orbit-data`, seeded from the old public branch:
    ```bash
-   git fetch origin data
+   gh repo create withaphelion-afk/orbit-data --private
    git push https://github.com/withaphelion-afk/orbit-data.git origin/data:refs/heads/data
    ```
-2. **Data token.** GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: **only `orbit-data`**. Permissions: **Contents: Read and write**. Copy it.
-3. **Configure the code repo's Actions.** In `orbit`: Settings → Secrets and variables → Actions:
-   - Secrets: `ORBIT_DATA_TOKEN` = the data token. `HF_TOKEN` = a Hugging Face token with **write** access (huggingface.co → Settings → Access Tokens).
-   - Variables: `ORBIT_DATA_REPO` = `withaphelion-afk/orbit-data`. `HF_SPACE` = `your-hf-username/orbit`.
-4. **Create the Space.** huggingface.co → New Space → name `orbit`, SDK **Docker** (blank template), visibility **Private**. Only you can open it, which is the terminal's login. In the Space's Settings → Variables and secrets:
-   - Secret `ORBIT_DATA_TOKEN`: the same data token.
-   - Secret `ORBIT_DISPATCH_TOKEN`: a second fine-grained token with repository access **only `orbit`** and permission **Actions: Read and write**. It lets RUN ANALYSIS start the workflow.
-   - Variable `ORBIT_DATA_REPO` = `withaphelion-afk/orbit-data`.
-5. **First run.** In `orbit` → Actions, run **runner**, then **analysis**, then **deploy space** (each has a "Run workflow" button). After that everything runs by itself.
-6. **PCs that still run Orbit locally** should use the private repo too, or they'll keep syncing to the old public branch. On each one, run `git remote add data https://github.com/withaphelion-afk/orbit-data.git` and put `ORBIT_DATA_SYNC_REMOTE=data` and `ORBIT_DATA_SYNC_JOURNAL=1` in `.env`. Don't keep a PC runner going as well, or two hosts will do the same work.
-7. Once the jobs run, the public `data` branch on `orbit` can be deleted.
+2. **Three tokens:**
+   - **A**: GitHub → Settings → Developer settings → Fine-grained tokens. Repository access **only `orbit-data`**, permission **Contents: Read and write**.
+   - **B**: same page. Repository access **only `orbit`**, permission **Actions: Read and write** (lets RUN ANALYSIS start the workflow).
+   - **C**: huggingface.co → Settings → Access Tokens → **Write**.
+3. **Put them in this repo's secrets**, logged in to `gh` as the owner. Each command asks for the value and doesn't echo it:
+   ```bash
+   gh secret set ORBIT_DATA_TOKEN --repo withaphelion-afk/orbit       # token A
+   gh secret set ORBIT_DISPATCH_TOKEN --repo withaphelion-afk/orbit   # token B
+   gh secret set HF_TOKEN --repo withaphelion-afk/orbit               # token C
+   gh variable set ORBIT_DATA_REPO --repo withaphelion-afk/orbit --body withaphelion-afk/orbit-data
+   ```
+4. **Start it:** in `orbit` → Actions, run **runner**, then **analysis**, then **deploy space**. The deploy creates the Space (private, so only you can open it) as `<your-hf-user>/orbit` (set the `HF_SPACE` variable for another name), and copies token A, token B and `ORBIT_DATA_REPO` into the Space's settings on every deploy. Nothing needs setting on Hugging Face.
+5. **PCs that still run Orbit locally** should use the private repo too. On each one, run `git remote add data https://github.com/withaphelion-afk/orbit-data.git` and put `ORBIT_DATA_SYNC_REMOTE=data` and `ORBIT_DATA_SYNC_JOURNAL=1` in `.env`. Don't keep a PC runner going as well, or two hosts will do the same work.
+6. Once the jobs run, the public `data` branch on `orbit` can be deleted.
 
 ### Things to know
 
 - **GitHub turns off scheduled workflows after 60 days with no activity in the repo**, and these jobs write to `orbit-data`, not here. The daily `analysis` job therefore re-enables `runner` and `analysis` at the end of every run (with the job's own token), which resets that clock. If the analysis ever stops for 60 days, re-enable both from the Actions tab.
-- **Until the setup is done, `runner` and `analysis` are skipped**, not failed: they wait for the `ORBIT_DATA_REPO` variable.
+- **Until the setup is done, `runner` and `analysis` are skipped**, not failed: they wait for the `ORBIT_DATA_REPO` variable. `deploy space` likewise does nothing until `HF_TOKEN` is set.
 - **This repo's Actions logs are public.** They show prices, regime and counts, never your journal.
 - **Scheduled jobs can start a few minutes late** when GitHub is busy. The SYS screen shows the last cycle and the next analysis.
 - **Binance through `data-api.binance.vision`.** `api.binance.com` refuses US addresses, which is where GitHub's and Hugging Face's servers are. The mirror serves the same market data. `scripts/probe_sources.py` (or the `probe sources` workflow) checks every price source from a given host.

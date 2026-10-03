@@ -1,10 +1,12 @@
 name: deploy space
 
 # Continuous deployment: once CI passes on main, put that commit on the Hugging
-# Face Space (web terminal + API). It copies deploy/hf-space/ into the Space repo
-# with the commit to build, and Hugging Face rebuilds the Space. Needs the HF_TOKEN
-# secret (write access) and the HF_SPACE variable (owner/space-name); does nothing
-# until HF_SPACE is set. Run it by hand to redeploy the current main.
+# Face Space (web terminal + API), and Hugging Face rebuilds it. The first run
+# also creates the Space (private, Docker). Every run sets the Space's secrets
+# and variables from this repo's, so they are only ever entered here:
+#   secrets   HF_TOKEN (Hugging Face, write), ORBIT_DATA_TOKEN, ORBIT_DISPATCH_TOKEN
+#   variables ORBIT_DATA_REPO, HF_SPACE (optional, default <hf-user>/orbit)
+# Does nothing until HF_TOKEN is set. Run it by hand to redeploy the current main.
 on:
   workflow_run:
     workflows: [ci]
@@ -23,30 +25,21 @@ jobs:
   deploy:
     # Only a green CI run of a push to main (not a PR run that happens to target main).
     if: >-
-      vars.HF_SPACE != '' && (github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Push the Space
+      - uses: astral-sh/setup-uv@v6
+      - name: Create or update the Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: ${{ vars.HF_SPACE }}
+          ORBIT_DATA_TOKEN: ${{ secrets.ORBIT_DATA_TOKEN }}
+          ORBIT_DISPATCH_TOKEN: ${{ secrets.ORBIT_DISPATCH_TOKEN }}
+          ORBIT_DATA_REPO: ${{ vars.ORBIT_DATA_REPO }}
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: |
-          [ -n "$HF_TOKEN" ] || { echo "::error::Set the HF_TOKEN secret (README: Free cloud hosting)."; exit 1; }
-          space="$(mktemp -d)"
-          git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
-          git clone --quiet --depth 1 "https://huggingface.co/spaces/${HF_SPACE}" "$space"
-          cp deploy/hf-space/* "$space"/
-          echo "$GITHUB_REPOSITORY" > "$space/ORBIT_REPO"
-          echo "$SHA" > "$space/ORBIT_COMMIT"
-          cd "$space"
-          git add -A
-          if git diff --cached --quiet; then echo "Space already on $SHA"; exit 0; fi
-          git -c user.name=orbit-actions -c user.email=orbit-actions@users.noreply.github.com commit --quiet -m "Build ${SHA}"
-          git push --quiet
-          echo "Pushed; Hugging Face is rebuilding https://huggingface.co/spaces/${HF_SPACE}"
+        run: uv run --no-project --with huggingface_hub python deploy/hf-space/deploy.py
