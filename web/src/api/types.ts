@@ -109,6 +109,10 @@ export interface HorizonStatBase {
   q_big_down: number | null
   q_sideways: number | null
   p_uniform_best: number | null
+  rw_big_up?: number | null // Romano-Wolf (family-wise) p-values: a comparison column, not used for labels
+  rw_big_down?: number | null
+  rw_sideways?: number | null
+  neighbour_support?: number | null // share of neighbouring horizons showing the same effect direction (diagnostic)
 }
 
 /** Counted in daily bars from the day of the transit. */

@@ -34,6 +34,7 @@ from typing import Callable
 from orbit.config.settings import DATA_DIR, HISTORY_START, STITCH_MAX_MEDIAN_DIFF, STITCH_OVERLAP_DAYS
 from orbit.core.types import Asset, Candle
 from orbit.data import binance, bitstamp, coinbase, dukascopy
+from orbit.data.gaps import find_gaps
 from orbit.data.dates import today_utc, utc_day
 from orbit.data.storage import load_candles, save_candles
 
@@ -208,6 +209,7 @@ def _report(asset: Asset, timeframe: str, candles: list[Candle], overlap: dict) 
         "bars": len(candles),
         # Crypto trades around the clock, so gaps there are real holes; silver skips weekends by design.
         "missing_bars": expected - len(candles),
+        "gaps": find_gaps(asset, timeframe, candles) if candles else None,  # holes the market being closed doesn't explain
         "sources": [{**s, "first": s["first"].isoformat(), "last": s["last"].isoformat()} for s in sources.values()],
         **overlap,
     }
