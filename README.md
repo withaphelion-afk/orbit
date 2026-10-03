@@ -203,6 +203,18 @@ uv run python scripts/backfill_silver.py   # the spot-silver download (shared al
 
 **CI/CD:** every push and pull request runs `ci.yml`, which covers Python tests on Windows, macOS and Linux, plus the web typecheck, lint, tests and build. When CI passes on `main`, `deploy-web.yml` builds the static terminal (`VITE_ORBIT_STATIC=1`) and deploys it to Vercel.
 
+**Local task runner** (`scripts/dev.py`, standard library only, no tokens):
+
+```bash
+uv run python scripts/dev.py check          # all Python + web tests, typecheck, lint, build; PASS/FAIL summary
+uv run python scripts/dev.py ship "msg"     # commit to a new branch, push, open a PR (CI checks it)
+uv run python scripts/dev.py deploy [PR]    # runs check first; merges into main only if everything passes
+uv run python scripts/dev.py install-hook   # run check automatically before any push to main
+uv run python scripts/dev.py status | cleanup | start | stop
+```
+
+The full check runs only on the way to `main` (via `deploy` or the pre-push hook), since `main` is what Vercel deploys.
+
 **Conventions:**
 - One strategy at a time.
 - Settings live in `config/settings.py`.
