@@ -20,6 +20,7 @@ import type {
   Candle,
   DecisionRequest,
   JournalRow,
+  ProjectionView,
   SuggestionView,
   SystemStatus,
   Tick,
@@ -149,6 +150,13 @@ export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (.
     candles: (a: Asset) => get(`candles/${a}.json`),
     signals: (a: Asset) => get(`signals/${a}.json`),
     regime: () => get('regime.json'),
+    async projections(days: number, includeNone: boolean) {
+      // projections.json covers 60 days, weak and above; anything wider comes from projections-all.json (180 days, NONE included).
+      const all = await get<ProjectionView[]>(days <= 60 && !includeNone ? 'projections.json' : 'projections-all.json')
+      const until = Date.now() + days * 86_400_000
+      return all.filter((p) => Date.parse(p.window_start) <= until && (includeNone || p.label !== 'none'))
+    },
+    projectionTrack: () => get('projections-track.json'),
     sky: () => get('sky.json'),
     async transits(from?: string, to?: string) {
       if (!from && !to) return get<TransitView[]>('transits.json')

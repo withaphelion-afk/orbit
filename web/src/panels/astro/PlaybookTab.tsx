@@ -330,7 +330,7 @@ const when = (o: PatternOccurrence) => `${day(o.date)} ${year(o.date)}`
 
 type Sub = 'DAILY' | 'HOURLY' | 'OCCURRENCES' | 'CONTEXT'
 
-function PatternDetail({ asset, id }: { asset: Asset; id: string }) {
+export function PatternDetail({ asset, id }: { asset: Asset; id: string }) {
   const { data: p, isPending, error } = usePattern(asset, id)
   const [sub, setSub] = useState<Sub>('DAILY')
   const [onlyExceptions, setOnlyExceptions] = useState(false)

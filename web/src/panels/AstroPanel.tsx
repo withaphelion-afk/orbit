@@ -9,21 +9,22 @@ import { day, daysFrom, EVENT_KIND, hhmm, pct, pval, transitLabel } from '../lib
 import { useTerminal } from '../state/store'
 import { ConfLabel, OutcomeTag } from './astro/labels'
 import { ModelTab } from './astro/ModelTab'
+import { ProjectionsTab } from './astro/ProjectionsTab'
 import { PlaybookTab } from './astro/PlaybookTab'
 
-type Tab = 'SKY' | 'EVENTS' | 'PLAYBOOK' | 'CHOP' | 'MODEL'
-const TABS: Tab[] = ['SKY', 'EVENTS', 'PLAYBOOK', 'CHOP', 'MODEL']
+type Tab = 'PROJECTIONS' | 'SKY' | 'EVENTS' | 'PLAYBOOK' | 'CHOP' | 'MODEL'
+const TABS: Tab[] = ['PROJECTIONS', 'SKY', 'EVENTS', 'PLAYBOOK', 'CHOP', 'MODEL']
 const ICON = { size: 18, strokeWidth: 1.75 } as const
 const EVIDENCE: ConfidenceLabel[] = ['strong', 'moderate', 'weak']
 
 export function AstroPanel({ hidden }: { hidden: boolean }) {
-  const [tab, setTab] = useState<Tab>('PLAYBOOK')
+  const [tab, setTab] = useState<Tab>('PROJECTIONS')
   const asset = useTerminal((s) => s.asset)
   return (
     <Panel
       code="ASTRO"
       title={
-        tab === 'MODEL' ? `Vedic model · ${ASSET_META[asset].name}` : tab === 'PLAYBOOK' || tab === 'CHOP' ? `Transit research · ${ASSET_META[asset].name}` : 'Sky and transits (Vedic)'
+        tab === 'PROJECTIONS' ? 'Projections: upcoming events and what history says' : tab === 'MODEL' ? `Vedic model · ${ASSET_META[asset].name}` : tab === 'PLAYBOOK' || tab === 'CHOP' ? `Transit research · ${ASSET_META[asset].name}` : 'Sky and transits (Vedic)'
       }
       description={
         <>
@@ -42,6 +43,7 @@ export function AstroPanel({ hidden }: { hidden: boolean }) {
         </>
       }
     >
+      {tab === 'PROJECTIONS' && <ProjectionsTab />}
       {tab === 'SKY' && <SkyTab />}
       {tab === 'EVENTS' && <EventsTab />}
       {tab === 'PLAYBOOK' && <PlaybookTab asset={asset} />}

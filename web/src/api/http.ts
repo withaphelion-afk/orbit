@@ -15,6 +15,8 @@ import type {
   ModelReport,
   PatternResult,
   PlaybookOverview,
+  ProjectionTrack,
+  ProjectionView,
   PlaybookView,
   Quote,
   RegimeReading,
@@ -86,6 +88,9 @@ export function createApi(base = '', fetcher: typeof fetch = (...a) => fetch(...
     runs: () => get<AnalysisRun[]>('/api/analysis/runs'),
     currentRun: () => get<AnalysisRun | null>('/api/analysis/runs/current'),
     schedule: () => get<ScheduleView>('/api/analysis/schedule'),
+    projections: (days: number, includeNone: boolean) =>
+      get<ProjectionView[]>(`/api/projections?days=${days}${includeNone ? '&include_none=true' : ''}`),
+    projectionTrack: () => get<ProjectionTrack>('/api/projections/track'),
     intraday: (a: Asset, at: string, beforeHours: number, afterHours: number) =>
       get<Candle[]>(`/api/intraday/${a}?at=${enc(at)}&before_hours=${beforeHours}&after_hours=${afterHours}`),
     async startRun(opts: { placebo: boolean; refresh: boolean }): Promise<AnalysisRun> {

@@ -51,6 +51,9 @@ export function useCurrentRun() {
 }
 export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: api.runs, refetchInterval: 30_000 })
 export const useSchedule = () => useQuery({ queryKey: ['schedule'], queryFn: api.schedule, refetchInterval: 60_000 })
+export const useProjections = (days: number, includeNone: boolean) =>
+  useQuery({ queryKey: ['projections', days, includeNone], queryFn: () => api.projections(days, includeNone), refetchInterval: 30 * 60_000 })
+export const useProjectionTrack = () => useQuery({ queryKey: ['projections-track'], queryFn: api.projectionTrack, refetchInterval: 30 * 60_000 })
 export const useIntraday = (a: Asset, at: string | null, beforeHours: number, afterHours: number) =>
   useQuery({ queryKey: ['intraday', a, at, beforeHours, afterHours], queryFn: () => api.intraday(a, at!, beforeHours, afterHours), enabled: !!at })
 

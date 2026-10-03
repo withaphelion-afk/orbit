@@ -494,3 +494,81 @@ export interface ScheduleView {
   last_success_at: ISODateTime | null
   last_success_trigger: string | null
 }
+
+// ---------- projections (analysis/projections.py, api/schemas.py) ----------
+
+/** A pattern's past occurrences that happened in conditions like today's. */
+export interface LikeNow {
+  regime: string
+  volatility_percentile: number
+  n: number
+  matches: number
+  share: number
+}
+
+/** One upcoming event for one asset, with what history says followed it. Never a promise:
+ * `trusted` is only true for patterns that survive multiple-testing correction. */
+export interface Projection {
+  id: string
+  asset: Asset
+  event: TransitEvent
+  pattern_id: string
+  description: string
+  label: ConfidenceLabel
+  score: number
+  horizon_days: number
+  outcome: Outcome
+  n: number
+  hit_rate: number
+  base_rate: number
+  lift: number | null
+  ci_low: number
+  ci_high: number
+  q_value: number | null
+  mean_return: number
+  win_rate: number
+  timing_headline_hours: number | null
+  timing_dominant: Outcome | null
+  timing_label: ConfidenceLabel
+  median_hours_to_move: number | null
+  window_start: ISODateTime
+  window_end: ISODateTime
+  like_now: LikeNow | null
+  group_id: string
+  conflict: boolean
+  trusted: boolean
+  note: string
+}
+
+export interface ProjectionView extends Projection {
+  horizon_stat: PatternHorizonStat
+}
+
+export interface LoggedProjection {
+  projection: Projection
+  recorded_at: ISODateTime
+  graded_at: ISODateTime | null
+  graded_through: ISODateTime | null
+  actual_outcome: Outcome | null
+  forward_return: number | null
+  hit: boolean | null
+  void_reason: string | null
+}
+
+export interface TrackBucket {
+  recorded: number
+  pending: number
+  graded: number
+  void: number
+  hits: number
+  hit_rate: number | null
+  avg_base_rate: number | null
+}
+
+export interface ProjectionTrack {
+  first_recorded_at: ISODateTime | null
+  total: TrackBucket
+  by_label: Record<string, TrackBucket>
+  recent: LoggedProjection[]
+  note: string
+}

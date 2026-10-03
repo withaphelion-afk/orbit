@@ -160,3 +160,9 @@
   .pbk-search { max-width: none; }
   .p-ASTRO .intraday-chart { height: 240px; }
 }
+
+/* Projections evidence */
+.proj-evidence { display: grid; gap: 12px; }
+.proj-verdict { font: 700 12px/1.3 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; }
+.proj-verdict.up { color: var(--up); }
+.proj-verdict.warn { color: var(--warn); }
