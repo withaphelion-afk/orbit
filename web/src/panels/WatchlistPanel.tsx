@@ -62,7 +62,7 @@ export function WatchlistPanel({ hidden }: { hidden: boolean }) {
     .sort((a, b) => a.date.localeCompare(b.date))[0]
 
   return (
-    <Panel code="WL" title="Watchlist" hidden={hidden} meta={<span className="dim">1–4 SELECT</span>}>
+    <Panel code="WL" title="Watchlist" hidden={hidden}>
       <div className="watch">
         <div className="wl-head">
           <span className="lbl">Asset · regime</span>

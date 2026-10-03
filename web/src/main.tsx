@@ -4,6 +4,13 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import './styles/tokens.css'
 import './styles/app.css'
+import './styles/screens/monitor.css'
+import './styles/screens/suggestions.css'
+import './styles/screens/journal.css'
+import './styles/screens/drift.css'
+import './styles/screens/astro.css'
+import './styles/screens/system.css'
+import './styles/screens/help.css'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } },

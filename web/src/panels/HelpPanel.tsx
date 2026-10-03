@@ -2,21 +2,19 @@ import { Panel } from '../components/Panel'
 import { FUNCTIONS } from '../lib/commands'
 
 const EXAMPLES = [
-  ['SOL GP', 'Chart Solana'],
-  ['BTC', 'Make Bitcoin the active asset'],
-  ['SUGG', 'Open the suggestion queue'],
-  ['XAG DRIFT', 'Switch to silver and open Drift'],
+  ['btc', 'Bitcoin'],
+  ['silver  or  xag', 'Silver (XAG/USD)'],
+  ['usd', 'Every instrument'],
 ]
 
 const KEYS = [
   ['CTRL K', 'Command palette'],
-  ['/', 'Focus the command line'],
+  ['/', 'Search an instrument (or just start typing)'],
   ['1 – 4', 'Switch asset: BTC ETH SOL XAG'],
   ['J / K', 'Next or previous suggestion (SUGG)'],
   ['T  S  M', 'Take, skip or modify the selected suggestion'],
   ['CTRL ↵', 'Log the decision'],
   ['ESC', 'Cancel or close, then return to MON'],
-  ['Click a panel code', 'Maximise that panel; click again to restore'],
 ]
 
 export function HelpPanel({ hidden }: { hidden: boolean }) {
@@ -24,8 +22,8 @@ export function HelpPanel({ hidden }: { hidden: boolean }) {
     <Panel code="HELP" title="Commands and keys" hidden={hidden}>
       <div className="help">
         <section>
-          <h3>COMMAND LINE</h3>
-          <p>Type an asset, a function, or both, then press Enter or GO. Tab completes the grey suggestion. ↑ and ↓ step through history.</p>
+          <h3>INSTRUMENT SEARCH</h3>
+          <p>The search box at the top finds an instrument by code, name or pair. ↑ and ↓ pick one, Enter or a click makes it the active asset. Screens are on the bar at the bottom, the F-keys, and Ctrl K.</p>
           <table>
             <tbody>
               {EXAMPLES.map(([k, d]) => (

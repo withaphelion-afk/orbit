@@ -59,14 +59,6 @@ export function SuggestionsPanel({ hidden }: { hidden: boolean }) {
       code="SUGG"
       title="Suggestions awaiting decision"
       hidden={hidden}
-      meta={
-        <>
-          <span>
-            <span className="hi">{list.length}</span> PENDING
-          </span>
-          <span className="dim">J/K · T S M</span>
-        </>
-      }
     >
       {!components ? (
         <QueryState isPending={sysPending} error={sysError} what="system status" />

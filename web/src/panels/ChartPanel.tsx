@@ -3,7 +3,7 @@ import { useCandles, useComponents, useSignals, useSuggestions, useTransits } fr
 import type { TransitView } from '../api/types'
 import { QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
-import { ASSETS, ASSET_META, TV_INTERVALS } from '../config'
+import { ASSET_META, TV_INTERVALS } from '../config'
 import { useTerminal, type ChartMode } from '../state/store'
 import { TradingViewChart } from './chart/TradingViewChart'
 
@@ -19,7 +19,6 @@ const ALWAYS = new Set(['STATION_RETROGRADE', 'STATION_DIRECT', 'SOLAR_ECLIPSE',
 
 export function ChartPanel({ hidden }: { hidden: boolean }) {
   const asset = useTerminal((s) => s.asset)
-  const setAsset = useTerminal((s) => s.setAsset)
   const mode = useTerminal((s) => s.chartMode)
   const setMode = useTerminal((s) => s.setChartMode)
   const interval = useTerminal((s) => s.tvInterval)
@@ -31,9 +30,8 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
       code="GP"
       hidden={hidden}
       title={`${meta.name} · ${mode === 'LIVE' ? 'TradingView live' : 'Orbit daily, full history'}`}
-      meta={
+      tools={
         <>
-          <Seg label="Asset" value={asset} onChange={setAsset} options={ASSETS.map((a) => ({ label: ASSET_META[a].label, value: a }))} />
           {mode === 'LIVE' ? (
             <Seg label="Interval" value={interval} onChange={setInterval} options={TV_INTERVALS.map((i) => ({ label: i.label, value: i.value }))} />
           ) : (
@@ -44,12 +42,7 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
       }
     >
       {mode === 'LIVE' ? (
-        <>
-          <TradingViewChart symbol={meta.tvSymbol} interval={interval} />
-          <a className="tv-credit" href={`https://www.tradingview.com/symbols/${meta.tvSymbol.replace(':', '-')}/`} target="_blank" rel="noopener noreferrer nofollow">
-            {meta.tvSymbol} chart by TradingView
-          </a>
-        </>
+        <TradingViewChart symbol={meta.tvSymbol} interval={interval} />
       ) : (
         <OrbitChartData />
       )}

@@ -34,6 +34,42 @@ export function Sparkline({ values, height = 34 }: { values: number[]; height?: 
   )
 }
 
+/**
+ * One headline number with its label and a small caption, as in a row of stat cards.
+ * `icon` is a lucide icon element (e.g. <Activity size={18} />); `tone` colours the value.
+ */
+export function StatCard({
+  label,
+  value,
+  caption,
+  icon,
+  tone,
+  title,
+}: {
+  label: string
+  value: ReactNode
+  caption?: ReactNode
+  icon?: ReactNode
+  tone?: 'up' | 'down' | 'warn' | 'astro' | 'dim'
+  title?: string
+}) {
+  return (
+    <div className="stat" title={title}>
+      {icon && <span className="stat-ico">{icon}</span>}
+      <div className="stat-body">
+        <span className="stat-lbl">{label}</span>
+        <b className={`stat-v ${tone ?? ''}`}>{value}</b>
+        {caption && <span className="stat-cap">{caption}</span>}
+      </div>
+    </div>
+  )
+}
+
+/** A responsive row of StatCards. */
+export function StatGrid({ children }: { children: ReactNode }) {
+  return <div className="stats">{children}</div>
+}
+
 export type PillTone = 'off' | 'ok' | 'watch' | 'drift' | 'astro'
 
 export function Pill({ tone, children, title }: { tone: PillTone; children: ReactNode; title?: string }) {

@@ -23,7 +23,7 @@ export function SystemPanel({ hidden }: { hidden: boolean }) {
   const connected = useTerminal((s) => s.feedConnected)
 
   return (
-    <Panel code="SYS" title="System" hidden={hidden} meta={<span>RUNNER · LAYERS · FEEDS · LOG · CONFIG</span>}>
+    <Panel code="SYS" title="System" hidden={hidden}>
       {!sys ? (
         <QueryState isPending={isPending} error={error} what="system status" />
       ) : (

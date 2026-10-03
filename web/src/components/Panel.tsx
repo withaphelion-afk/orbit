@@ -1,37 +1,26 @@
 import type { ReactNode } from 'react'
-import type { View } from '../lib/commands'
-import { useTerminal } from '../state/store'
 
 interface Props {
   code: string
   title: string
-  meta?: ReactNode
+  /** One plain sentence under the title saying what this screen is for. */
+  description?: ReactNode
+  /** Controls for this panel (tabs, filters, chart options), shown as a toolbar under the title. */
+  tools?: ReactNode
   hidden?: boolean
   className?: string
   children: ReactNode
 }
 
-/**
- * A terminal panel: code chip, title, right-aligned meta, scrolling body.
- * Clicking a function's code maximises it; clicking again returns to MON.
- */
-export function Panel({ code, title, meta, hidden, className = '', children }: Props) {
-  const view = useTerminal((s) => s.view)
-  const setView = useTerminal((s) => s.setView)
-  const isView = ['GP', 'SUGG', 'JRNL', 'DRIFT', 'ASTRO', 'SYS', 'HELP'].includes(code)
+/** A terminal panel: a card with its title (and description), an optional toolbar, and a scrolling body. */
+export function Panel({ code, title, description, tools, hidden, className = '', children }: Props) {
   return (
     <section className={`panel p-${code} ${className}`} hidden={hidden}>
-      <header className="ph">
-        {isView ? (
-          <button className="code" onClick={() => setView(view === code ? 'MON' : (code as View))} title={view === code ? 'Back to MON' : `Maximise ${code}`}>
-            {code}
-          </button>
-        ) : (
-          <span className="code">{code}</span>
-        )}
-        <span className="ptitle">{title}</span>
-        {meta && <div className="pmeta">{meta}</div>}
+      <header className={`ph ${description ? 'has-desc' : ''}`}>
+        <h2 className="ptitle">{title}</h2>
+        {description && <p className="pdesc">{description}</p>}
       </header>
+      {tools && <div className="ptools">{tools}</div>}
       <div className="pb">{children}</div>
     </section>
   )

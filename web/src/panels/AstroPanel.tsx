@@ -23,7 +23,7 @@ export function AstroPanel({ hidden }: { hidden: boolean }) {
         tab === 'MODEL' ? `Vedic model · ${ASSET_META[asset].name}` : tab === 'PLAYBOOK' || tab === 'CHOP' ? `Transit research · ${ASSET_META[asset].name}` : 'Sky and transits (Vedic)'
       }
       hidden={hidden}
-      meta={
+      tools={
         <>
           <Pill tone="astro">RESEARCH</Pill>
           <Seg label="View" value={tab} onChange={setTab} options={TABS.map((t) => ({ label: t, value: t }))} />

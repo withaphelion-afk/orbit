@@ -51,7 +51,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
   )
 
   return (
-    <Panel code="JRNL" title="Trade journal" hidden={hidden} meta={<Seg label="Filter" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ label: f, value: f }))} />}>
+    <Panel code="JRNL" title="Trade journal" hidden={hidden} tools={<Seg label="Filter" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ label: f, value: f }))} />}>
       {!components ? (
         <QueryState isPending={sysPending} error={sysError} what="system status" />
       ) : !built ? (

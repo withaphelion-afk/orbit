@@ -62,7 +62,7 @@ export function DriftPanel({ hidden }: { hidden: boolean }) {
       code="DRIFT"
       title={view === 'DRIFT' ? 'Backtest vs live' : view === 'BACKTEST' ? 'RSI divergence backtest, full history' : 'Feedback loop: how confidence is set'}
       hidden={hidden}
-      meta={
+      tools={
         <>
           {view === 'DRIFT' && d && (
             <>

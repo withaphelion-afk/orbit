@@ -9,7 +9,7 @@ const isField = (el: Element | null) => !!el && (el.tagName === 'INPUT' || el.ta
 
 /**
  * Terminal-wide keys: F1-F8 switch function, Ctrl/Cmd+K opens the palette,
- * "/" focuses the command line, 1-4 switch asset, Esc steps back to MON.
+ * "/" focuses the instrument search, 1-4 switch asset, Esc steps back to MON.
  * Panel-specific keys (J/K/T/S/M in SUGG) live in their panels.
  */
 export function useTerminalKeys() {
@@ -44,7 +44,7 @@ export function useTerminalKeys() {
         t.setAsset(ASSETS[Number(e.key) - 1])
         return
       }
-      // Any other letter starts typing a command, Bloomberg-style.
+      // Any other letter starts an instrument search.
       if (/^[a-z]$/i.test(e.key)) document.getElementById(COMMAND_INPUT_ID)?.focus()
     }
     window.addEventListener('keydown', onKey)

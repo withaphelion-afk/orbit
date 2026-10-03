@@ -3,16 +3,16 @@ import { ASSETS, ASSET_META } from '../config'
 
 export type View = 'HELP' | 'MON' | 'GP' | 'SUGG' | 'JRNL' | 'DRIFT' | 'ASTRO' | 'SYS'
 
-/** Terminal functions, in F-key order. */
-export const FUNCTIONS: { code: View; key: string; desc: string }[] = [
-  { code: 'HELP', key: 'F1', desc: 'Commands and keys' },
-  { code: 'MON', key: 'F2', desc: 'Monitor: chart with the watchlist' },
-  { code: 'GP', key: 'F3', desc: 'Price chart for the active asset' },
-  { code: 'SUGG', key: 'F4', desc: 'RSI divergence suggestions awaiting your decision' },
-  { code: 'JRNL', key: 'F5', desc: 'Trade journal' },
-  { code: 'DRIFT', key: 'F6', desc: 'Backtest, feedback loop, and live vs backtest drift' },
-  { code: 'ASTRO', key: 'F7', desc: 'Vedic sky, events, playbook and model (research)' },
-  { code: 'SYS', key: 'F8', desc: 'Runner, feeds, alerts and config' },
+/** Terminal functions, in F-key order. `label` is the name in the navigation bar. */
+export const FUNCTIONS: { code: View; key: string; label: string; desc: string }[] = [
+  { code: 'HELP', key: 'F1', label: 'Help', desc: 'Commands and keys' },
+  { code: 'MON', key: 'F2', label: 'Monitor', desc: 'Monitor: chart with the watchlist' },
+  { code: 'GP', key: 'F3', label: 'Chart', desc: 'Price chart for the active asset' },
+  { code: 'SUGG', key: 'F4', label: 'Suggestions', desc: 'RSI divergence suggestions awaiting your decision' },
+  { code: 'JRNL', key: 'F5', label: 'Journal', desc: 'Trade journal' },
+  { code: 'DRIFT', key: 'F6', label: 'Drift', desc: 'Backtest, feedback loop, and live vs backtest drift' },
+  { code: 'ASTRO', key: 'F7', label: 'Astro', desc: 'Vedic sky, events, playbook and model (research)' },
+  { code: 'SYS', key: 'F8', label: 'System', desc: 'Runner, feeds, alerts and config' },
 ]
 
 const VIEW_CODES = new Set<string>(FUNCTIONS.map((f) => f.code))
@@ -44,15 +44,12 @@ export function parseCommand(input: string): Parsed | null {
   return out
 }
 
-const COMPLETIONS = [
-  ...FUNCTIONS.map((f) => f.code),
-  ...ASSETS.map((a) => ASSET_META[a].label),
-  ...ASSETS.flatMap((a) => ['GP', 'DRIFT'].map((f) => `${ASSET_META[a].label} ${f}`)),
-]
-
-/** The first completion that extends the input, for the grey ghost text. */
-export function complete(input: string): string | null {
-  const v = input.toUpperCase()
-  if (!v) return null
-  return COMPLETIONS.find((c) => c.startsWith(v) && c !== v) ?? null
+/** Instruments matching a search, by code, label, name or pair (case-insensitive); all of them for a blank query. */
+export function findInstruments(query: string): Asset[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return ASSETS
+  return ASSETS.filter((a) => {
+    const m = ASSET_META[a]
+    return [a, m.label, m.name, m.pair].some((s) => s.toLowerCase().includes(q))
+  })
 }

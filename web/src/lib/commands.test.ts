@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { complete, parseCommand } from './commands'
+import { findInstruments, parseCommand } from './commands'
 
 describe('parseCommand', () => {
   it('reads an asset and a function in either order', () => {
@@ -23,11 +23,15 @@ describe('parseCommand', () => {
   })
 })
 
-describe('complete', () => {
-  it('extends a prefix and never echoes a finished command', () => {
-    expect(complete('su')).toBe('SUGG')
-    expect(complete('xag d')).toBe('XAG DRIFT')
-    expect(complete('SUGG')).toBeNull()
-    expect(complete('')).toBeNull()
+describe('findInstruments', () => {
+  it('matches by code, terminal label, name or pair', () => {
+    expect(findInstruments('xag')).toEqual(['SILVER'])
+    expect(findInstruments('silver')).toEqual(['SILVER'])
+    expect(findInstruments('bit')).toEqual(['BTC'])
+    expect(findInstruments('usd')).toHaveLength(4)
+  })
+  it('lists everything for a blank query and nothing for a miss', () => {
+    expect(findInstruments('  ')).toEqual(['BTC', 'ETH', 'SOL', 'SILVER'])
+    expect(findInstruments('doge')).toEqual([])
   })
 })

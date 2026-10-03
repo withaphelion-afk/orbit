@@ -31,5 +31,9 @@
   --astro: #b69cff;
 
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  --ui: 'IBM Plex Sans Condensed', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  --ui: 'Daikon', 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --r: 14px; /* card radius */
+  --r-sm: 8px; /* controls */
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
 }
