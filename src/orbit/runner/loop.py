@@ -152,5 +152,28 @@ def run_forever(interval_seconds: int = RUNNER_INTERVAL_SECONDS, schedule_analys
         time.sleep(schedule.seconds_until_next_wake(datetime.now(timezone.utc), next_data, next_analysis if schedule_analysis else next_data))
 
 
+def run_single_cycle(interval_seconds: int = RUNNER_INTERVAL_SECONDS) -> bool:
+    """One data cycle, then exit: for hosts that start the runner on a schedule
+    (GitHub Actions) instead of keeping it alive. The scheduled analysis is a
+    separate job there, and syncing is the caller's job. Returns whether it worked."""
+    logger = _setup_logging()
+    status.mark_scheduled(interval_seconds)
+    status.mark_cycle_start()
+    try:
+        run_once(logger)
+        status.mark_cycle_end(ok=True)
+        return True
+    except Exception as exc:
+        logger.exception("Cycle failed.")
+        status.mark_cycle_end(ok=False, error=f"{type(exc).__name__}: {exc}")
+        return False
+
+
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Orbit's 24/7 runner")
+    parser.add_argument("--once", action="store_true", help="run one data cycle and exit (scheduled hosts)")
+    if parser.parse_args().once:
+        raise SystemExit(0 if run_single_cycle() else 1)
     run_forever()

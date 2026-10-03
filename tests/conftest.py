@@ -9,7 +9,7 @@ stand-ins for GitHub.
 
 import pytest
 
-from orbit import datasync
+from orbit import datasync, outputs
 from orbit.config import settings
 
 
@@ -22,4 +22,5 @@ def no_real_data_sync(monkeypatch):
     monkeypatch.setattr(datasync, "DATA_SYNC_ENABLED", False)
     monkeypatch.setattr(settings, "DATA_SYNC_JOURNAL", False)  # whatever this machine's .env says
     monkeypatch.setattr(datasync, "_git", _refuse)
+    monkeypatch.setattr(outputs, "_remote_url", _refuse)  # results sharing too; test_outputs.py points it at a local repo
     monkeypatch.setenv("ORBIT_DATA_SYNC", "0")  # for any subprocess a test starts

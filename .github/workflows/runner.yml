@@ -1,0 +1,50 @@
+name: runner
+
+# Orbit's 24/7 runner, as one cycle an hour on GitHub's servers: fetch new bars,
+# recompute features, create/expire/resolve suggestions, then share the data
+# (private data repo) and the results (its outputs branch) for the web server.
+on:
+  schedule:
+    - cron: "17 * * * *"  # hourly, off the top of the hour when GitHub's queue is busiest
+  workflow_dispatch:
+
+# The runner and the analysis share one set of data: never run two at once.
+concurrency:
+  group: orbit-host
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ORBIT_DATA_SYNC_REMOTE: data
+  ORBIT_DATA_SYNC_JOURNAL: "1"
+  ORBIT_HOST_NAME: github-actions
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # its token is for this repo only and would shadow the data repo's
+      - uses: ./.github/actions/orbit-setup
+        with:
+          data-token: ${{ secrets.ORBIT_DATA_TOKEN }}
+          data-repo: ${{ vars.ORBIT_DATA_REPO }}
+      - name: One runner cycle
+        id: cycle
+        continue-on-error: true
+        run: uv run python -m orbit.runner.loop --once
+      - name: Share data (prices, silver cache, journal)
+        if: always()
+        run: uv run python scripts/sync_data.py
+      - name: Share results (runner status, Vedic sky)
+        if: always()
+        run: uv run python -m orbit.outputs --publish
+      - name: Report a failed cycle
+        if: steps.cycle.outcome == 'failure'
+        run: |
+          echo "::error::The runner cycle failed; see 'One runner cycle' above. Data and status were still shared."
+          exit 1

@@ -3,9 +3,6 @@ name: probe sources
 # Checks which price sources answer from GitHub's runners (US-hosted).
 on:
   workflow_dispatch:
-  push:
-    branches: [deploy-free]
-    paths: [scripts/probe_sources.py, .github/workflows/probe.yml]
 
 jobs:
   probe:

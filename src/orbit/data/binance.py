@@ -17,7 +17,10 @@ from orbit.core.types import Asset, Candle
 from orbit.data.dates import bar_time
 from orbit.data.http import get_json
 
-BASE_URL = "https://api.binance.com/api/v3/klines"
+# Binance's public market-data mirror: same data as api.binance.com, but not
+# blocked for US addresses (GitHub Actions, most free hosts), which api.binance.com is.
+API_ROOT = "https://data-api.binance.vision/api/v3"
+BASE_URL = f"{API_ROOT}/klines"
 PAGE_LIMIT = 1000
 
 # Binance's trading pair symbols for each crypto asset we track.

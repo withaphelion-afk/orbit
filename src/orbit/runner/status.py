@@ -40,6 +40,14 @@ def mark_started(interval_seconds: int) -> None:
     _write({"pid": os.getpid(), "started_at": _now(), "interval_seconds": interval_seconds, "cycles": 0})
 
 
+def mark_scheduled(interval_seconds: int) -> None:
+    """For a host that runs one cycle per scheduled job (GitHub Actions): keep the
+    running totals across jobs instead of restarting them like mark_started does."""
+    status = read_status() or {"started_at": _now(), "cycles": 0}
+    status.update({"pid": os.getpid(), "interval_seconds": interval_seconds})
+    _write(status)
+
+
 def mark_cycle_start() -> None:
     status = read_status() or {}
     status.update({"last_cycle_started_at": _now(), "in_cycle": True})

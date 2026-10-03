@@ -1,0 +1,73 @@
+name: analysis
+
+# The daily analysis (playbook, backtest, feedback loop, Vedic model), as the
+# runner's 00:30 UTC schedule does on a PC. Sunday's run adds the placebo check.
+# The web terminal's RUN ANALYSIS button starts this through workflow_dispatch.
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      placebo:
+        description: Also run the placebo check (about 40 minutes more)
+        type: boolean
+        default: false
+      refresh:
+        description: Fetch the latest prices first
+        type: boolean
+        default: true
+
+concurrency:
+  group: orbit-host
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ORBIT_DATA_SYNC_REMOTE: data
+  ORBIT_DATA_SYNC_JOURNAL: "1"
+  ORBIT_HOST_NAME: github-actions
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/orbit-setup
+        with:
+          data-token: ${{ secrets.ORBIT_DATA_TOKEN }}
+          data-repo: ${{ vars.ORBIT_DATA_REPO }}
+      - name: Analysis run
+        id: run
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          PLACEBO: ${{ inputs.placebo }}
+          REFRESH: ${{ inputs.refresh }}
+        run: |
+          args="--now"
+          if [ "$EVENT" = "schedule" ]; then
+            args="$args --trigger schedule"
+            [ "$(date -u +%u)" = "7" ] && args="$args --placebo"
+          else
+            args="$args --trigger manual"
+            [ "$PLACEBO" = "true" ] && args="$args --placebo"
+            [ "$REFRESH" = "false" ] && args="$args --no-refresh"
+          fi
+          echo "orbit.analysis.run $args"
+          uv run python -m orbit.analysis.run $args
+      - name: Share data
+        if: always()
+        run: uv run python scripts/sync_data.py
+      - name: Share results
+        if: always()
+        run: uv run python -m orbit.outputs --publish
+      - name: Report a failed run
+        if: steps.run.outcome == 'failure'
+        run: |
+          echo "::error::The analysis run failed; see 'Analysis run' above."
+          exit 1
