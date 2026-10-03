@@ -78,10 +78,6 @@ def dignity(graha: Planet, rashi: int) -> str | None:
     return None
 
 
-def drishti_houses(graha: Planet) -> tuple[int, ...]:
-    return (7, *SPECIAL_DRISHTI.get(graha, ()))
-
-
 def order(a: Planet, b: Planet) -> tuple[Planet, Planet]:
     """A fixed order for unordered pairs, so each pair has one pattern id."""
     return (a, b) if GRAHAS.index(a) < GRAHAS.index(b) else (b, a)

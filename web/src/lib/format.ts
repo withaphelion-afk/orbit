@@ -61,16 +61,12 @@ interface TransitLike {
   label?: string
 }
 
-/** Vedic graha names (src/orbit/vedic/zodiac.py SHORT), and 3-letter forms for chart markers. */
-const GRAHA: Record<string, string> = {
-  SUN: 'Surya', MOON: 'Chandra', MARS: 'Mangal', MERCURY: 'Budh', JUPITER: 'Guru', VENUS: 'Shukra', SATURN: 'Shani', RAHU: 'Rahu', KETU: 'Ketu',
-}
+/** 3-letter Vedic graha names for chart markers. */
 const GRAHA_ABBR: Record<string, string> = {
   SUN: 'SUR', MOON: 'CHA', MARS: 'MAN', MERCURY: 'BUD', JUPITER: 'GUR', VENUS: 'SHU', SATURN: 'SHA', RAHU: 'RAH', KETU: 'KET',
 }
 
-export const grahaName = (p: string) => GRAHA[p] ?? p
-export const planetAbbr = (p: string) => GRAHA_ABBR[p] ?? p
+const planetAbbr = (p: string) => GRAHA_ABBR[p] ?? p
 
 /** The backend's own label ("Shani (Saturn) enters Meena (Pisces)"), or a compact form for chart markers ("SHA→Meena"). */
 export function transitLabel(e: TransitLike, short = false): string {

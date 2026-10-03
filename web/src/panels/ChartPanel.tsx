@@ -1,12 +1,14 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useCandles, useComponents, useSignals, useSuggestions, useTransits } from '../api/hooks'
 import type { TransitView } from '../api/types'
 import { QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSETS, ASSET_META, TV_INTERVALS } from '../config'
 import { useTerminal, type ChartMode } from '../state/store'
-import { OrbitChart } from './chart/OrbitChart'
 import { TradingViewChart } from './chart/TradingViewChart'
+
+// The charting library is only needed for Orbit's own chart, so the LIVE (TradingView) default doesn't download it.
+const OrbitChart = lazy(() => import('./chart/OrbitChart').then((m) => ({ default: m.OrbitChart })))
 
 const MODES: { label: string; value: ChartMode }[] = [
   { label: 'LIVE', value: 'LIVE' },
@@ -79,12 +81,14 @@ function OrbitChartData() {
 
   if (!candles.data) return <QueryState isPending={candles.isPending} error={candles.error} what="candles" />
   return (
-    <OrbitChart
-      asset={asset}
-      candles={candles.data}
-      signals={signals.data ?? []}
-      transits={marks}
-      pending={suggestions.data?.find((s) => s.suggestion.asset === asset)}
-    />
+    <Suspense fallback={<QueryState isPending error={null} what="chart" />}>
+      <OrbitChart
+        asset={asset}
+        candles={candles.data}
+        signals={signals.data ?? []}
+        transits={marks}
+        pending={suggestions.data?.find((s) => s.suggestion.asset === asset)}
+      />
+    </Suspense>
   )
 }

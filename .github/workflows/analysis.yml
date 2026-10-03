@@ -85,10 +85,6 @@ jobs:
       - name: Publish the web terminal's data
         if: always()
         uses: ./.github/actions/publish-terminal
-        with:
-          hf-token: ${{ secrets.HF_TOKEN }}
-          hf-space: ${{ vars.HF_SPACE }}
-          squash: "true"  # once a day, so hourly publishes don't pile up history on the Space
       - name: Keep the schedules alive
         # GitHub disables scheduled workflows after 60 days without activity in this repo, and these jobs
         # write to the data repo, not here. Re-enabling them every day resets that clock.

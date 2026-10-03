@@ -1,11 +1,12 @@
 """Render every API answer to static JSON files, for a web terminal with no server.
 
-    python -m orbit.snapshot site/api
+    python -m orbit.snapshot site
 
 The free cloud setup has no always-on server: GitHub Actions jobs compute
-everything, then call this to write each GET endpoint's answer to a file, and
-upload the files with the static web terminal (web/, built with
-VITE_ORBIT_STATIC=1, which reads these files instead of calling the API).
+everything, then call this to write each GET endpoint's answer to a file and
+push the files to the data repo's `site` branch (orbit.outputs --site). The web
+terminal (built with VITE_ORBIT_STATIC=1, hosted on Vercel) reads them from
+there with the viewer's GitHub token.
 
 The answers come from the real API (create_app, through a test client), so the
 static terminal shows exactly what the server would. Layout, mirrored by

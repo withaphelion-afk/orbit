@@ -1,7 +1,8 @@
-"""Share the computed results between hosts, on an `outputs` branch next to the data.
+"""Share computed files through single-commit branches of the data repo.
 
-    python -m orbit.outputs --publish    # send this machine's results
-    python -m orbit.outputs --fetch      # take the latest published results
+    python -m orbit.outputs --publish          # this machine's results -> `outputs`
+    python -m orbit.outputs --fetch            # the latest results -> data/
+    python -m orbit.outputs --site site/api    # the web terminal's data -> `site`
 
 datasync.py shares the inputs that are slow to rebuild (prices, caches) and
 merges them file by file. This module shares what is *computed* from them —
@@ -9,10 +10,13 @@ the playbook, backtest, feedback-loop calibration, Vedic model and sky, runner
 status — for hosts that don't compute it themselves: the web server reads it,
 and each scheduled GitHub Actions job starts from the previous job's results.
 
-Results are replaced wholesale, never merged, and the branch is a single
-commit that is force-pushed every time, so it never accumulates history (the
-analysis JSON is ~50 MB and changes daily; committing it normally would grow
-the repo by gigabytes a year). Only the newest results matter.
+The `site` branch holds the static web terminal's data (snapshot.py): the app
+reads it straight from this private repo with your GitHub token.
+
+Each branch is replaced wholesale, never merged: a single commit force-pushed
+every time, so it never accumulates history (the analysis JSON is ~50 MB and
+changes daily). The previous commit is fetched first, so a push only sends the
+files that changed.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ from orbit.datasync import NETWORK, SyncError, _git
 from orbit.fsutil import atomic_write_bytes
 
 BRANCH = os.getenv("ORBIT_OUTPUTS_BRANCH", "outputs")
+SITE_BRANCH = os.getenv("ORBIT_SITE_BRANCH", "site")
 WORK = REPO_ROOT / ".orbit-outputs"
 STATE = DATA_DIR / "run" / "outputs.json"
 MANIFEST = "manifest.json"
@@ -90,37 +95,51 @@ def _log_tail(path: Path) -> bytes:
     return "".join(lines[-LOG_LINES_KEPT:]).encode("utf-8")
 
 
-def publish(data_dir: Path = DATA_DIR) -> int:
-    """Replace the outputs branch with this machine's results. Returns the number of files sent."""
+def _replace_branch(branch: str, files: dict[str, Path | bytes], message: str) -> None:
+    """Make `branch` on the data remote one commit holding exactly `files`."""
     url = _remote_url()
     _clear(WORK)
     WORK.mkdir(parents=True)
-    _git("init", "-q", "-b", BRANCH, cwd=WORK)
-
-    files = collect(data_dir)
-    for rel, path in files.items():
+    _git("init", "-q", "-b", branch, cwd=WORK)
+    # Knowing the current commit lets the push send only the objects that changed.
+    _git(*NETWORK, "fetch", "-q", "--depth", "1", url, f"refs/heads/{branch}", cwd=WORK, check=False)
+    for rel, source in files.items():
         target = WORK / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+        if isinstance(source, bytes):
+            target.write_bytes(source)
+        else:
+            shutil.copyfile(source, target)
+    (WORK / ".gitattributes").write_text("* -text\n", encoding="utf-8")
+    _git("add", "-A", cwd=WORK)
+    who = ["-c", "user.name=Orbit", "-c", "user.email=orbit@localhost"]
+    _git(*who, "commit", "-q", "-m", message, cwd=WORK)
+    proc = _git(*NETWORK, "push", "-q", "--force", url, f"HEAD:refs/heads/{branch}", cwd=WORK, check=False)
+    _clear(WORK)
+    if proc.returncode:
+        raise SyncError(f"could not push the {branch} branch: {proc.stderr.strip()[-300:]}")
+
+
+def publish(data_dir: Path = DATA_DIR) -> int:
+    """Replace the outputs branch with this machine's results. Returns the number of files sent."""
+    files: dict[str, Path | bytes] = dict(collect(data_dir))
     log = data_dir / "logs" / "runner.log"
     if log.exists():
-        (WORK / "logs").mkdir(exist_ok=True)
-        (WORK / "logs" / "runner.log").write_bytes(_log_tail(log))
-        files["logs/runner.log"] = log
+        files["logs/runner.log"] = _log_tail(log)
     manifest = {
         "published_at": datetime.now(timezone.utc).isoformat(),
         "host": os.getenv("ORBIT_HOST_NAME") or platform.node(),
         "files": sorted(files),
     }
-    (WORK / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    (WORK / ".gitattributes").write_text("* -text\n", encoding="utf-8")
+    files[MANIFEST] = json.dumps(manifest, indent=2).encode("utf-8")
+    _replace_branch(BRANCH, files, f"Results from {manifest['host']} at {manifest['published_at']}")
+    return len(files) - 1
 
-    _git("add", "-A", cwd=WORK)
-    who = ["-c", "user.name=Orbit", "-c", "user.email=orbit@localhost"]
-    _git(*who, "commit", "-q", "-m", f"Results from {manifest['host']} at {manifest['published_at']}", cwd=WORK)
-    proc = _git(*NETWORK, "push", "-q", "--force", url, f"HEAD:refs/heads/{BRANCH}", cwd=WORK, check=False)
-    if proc.returncode:
-        raise SyncError(f"could not push the {BRANCH} branch: {proc.stderr.strip()[-300:]}")
+
+def publish_site(site_dir: Path) -> int:
+    """Replace the site branch with the web terminal's data (snapshot.py's output). Returns the file count."""
+    files: dict[str, Path | bytes] = {p.relative_to(site_dir).as_posix(): p for p in site_dir.rglob("*") if p.is_file()}
+    _replace_branch(SITE_BRANCH, files, f"Terminal data at {datetime.now(timezone.utc).isoformat()}")
     return len(files)
 
 
@@ -165,20 +184,19 @@ def fetch(data_dir: Path = DATA_DIR, force: bool = False) -> int:
     return taken
 
 
-def last_fetch() -> dict:
-    return _state()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Share Orbit's computed results through the outputs branch")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--publish", action="store_true")
     group.add_argument("--fetch", action="store_true")
+    group.add_argument("--site", type=Path, metavar="DIR", help="publish the web terminal's data (snapshot.py output)")
     parser.add_argument("--force", action="store_true", help="--fetch even if nothing changed")
     args = parser.parse_args()
     try:
         if args.publish:
             print(f"Published {publish()} result files to the {BRANCH} branch.")
+        elif args.site:
+            print(f"Published {publish_site(args.site)} terminal data files to the {SITE_BRANCH} branch.")
         else:
             n = fetch(force=args.force)
             print(f"Took {n} result files from the {BRANCH} branch." if n else "Results are up to date (or none published yet).")

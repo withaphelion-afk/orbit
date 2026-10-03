@@ -9,6 +9,11 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } },
 })
 
+// Installable as an app (manifest.webmanifest); production builds only, so dev reloads stay uncached.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  void navigator.serviceWorker.register('./sw.js')
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

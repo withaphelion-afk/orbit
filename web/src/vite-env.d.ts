@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_ORBIT_STATIC?: string
   /** owner/name of the code repo whose workflows the static terminal starts. */
   readonly VITE_ORBIT_GITHUB_REPO?: string
+  /** owner/name of the private data repo whose `site` branch the static terminal reads. */
+  readonly VITE_ORBIT_DATA_REPO?: string
 }
 
 interface ImportMeta {

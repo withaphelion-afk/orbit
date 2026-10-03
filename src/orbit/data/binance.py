@@ -32,15 +32,6 @@ SYMBOLS = {
 }
 
 
-def fetch_candles(asset: Asset, timeframe: str = "1d", limit: int = 500) -> list[Candle]:
-    """Fetch the most recent `limit` candles for `asset` at the given timeframe.
-
-    timeframe uses Binance's own strings: "1d" (daily), "1h" (hourly), etc.
-    limit is capped at 1000 by Binance's API.
-    """
-    return _get(asset, {"interval": timeframe, "limit": limit})
-
-
 def fetch_history(asset: Asset, start: datetime | None = None, timeframe: str = "1d") -> list[Candle]:
     """Every candle from `start` (or the symbol's listing, if None) to now."""
     start_ms = int(start.timestamp() * 1000) if start else 0

@@ -1,15 +1,17 @@
 /**
- * The Orbit API, served as static files: the free cloud setup has no server.
+ * The Orbit API without a server: the free cloud setup.
  *
  * GitHub Actions jobs render every API answer to JSON (src/orbit/snapshot.py) and
- * publish it next to this app (deploy/hf-space/publish.py). This client reads
- * those files and gives the screens the same interface as the HTTP client, so
- * no screen knows the difference. What a static site can't do itself:
- * - live prices come straight from Binance's public market-data mirror (silver
- *   has no browser-readable live feed, so it shows the last stored close);
+ * push it to the `site` branch of the private data repo (orbit.outputs --site).
+ * This client reads those files through GitHub's API with your token, and gives
+ * the screens the same interface as the HTTP client, so no screen knows the
+ * difference. The app itself is public; without the token it shows nothing.
+ * - Live prices come straight from Binance's public market-data mirror (silver
+ *   has no browser-readable live feed, so it shows the last stored close).
  * - Take/Skip/Modify and RUN ANALYSIS start GitHub workflows (decide.yml,
- *   analysis.yml) with a token you enter once, kept only in this browser. Their
- *   results appear with the next published snapshot, within a few minutes.
+ *   analysis.yml). Their results appear with the next snapshot, within minutes.
+ * The token (fine-grained: Contents read on the data repo, Actions read/write on
+ * the code repo) is asked for once and kept only in this browser.
  */
 import { ApiError, type OrbitApi } from './http'
 import type {
@@ -28,6 +30,7 @@ const TOKEN_KEY = 'orbit.githubToken'
 const DECIDED_KEY = 'orbit.decided' // suggestion id -> when you decided, until the snapshot catches up
 const RUN_KEY = 'orbit.startedRun'
 const CATCH_UP_MS = 30 * 60_000
+const CACHE_MS = 60_000 // the snapshot changes hourly; screens poll far more often
 const TICK_MS = 5_000
 const BINANCE = 'https://data-api.binance.vision/api/v3/ticker/price'
 const SYMBOLS: Partial<Record<Asset, string>> = { BTC: 'BTCUSDT', ETH: 'ETHUSDT', SOL: 'SOLUSDT' }
@@ -63,47 +66,76 @@ function newRunId(now = new Date()): string {
   return `${stamp}-${hex}`
 }
 
-export function createStaticApi(base = './api', repo = '', fetcher: typeof fetch = (...a) => fetch(...a)): OrbitApi {
-  const get = async <T>(file: string): Promise<T> => {
-    let res: Response
-    try {
-      res = await fetcher(`${base}/${file}`, { cache: 'no-cache' })
-    } catch {
-      throw new ApiError(0, 'Could not load the published data. Check your connection and reload.')
-    }
-    if (res.status === 404) throw new ApiError(404, 'Not published yet. The next GitHub Actions run publishes it (hourly).')
-    if (!res.ok) throw new ApiError(res.status, `${res.status} loading ${file}`)
-    const body = await res.json()
-    if (body && typeof body === 'object' && '__error' in body) throw new ApiError(body.__error.status, body.__error.detail)
-    return body as T
-  }
+export interface StaticSource {
+  dataRepo: string // owner/name of the private repo whose `site` branch holds the snapshot
+  codeRepo: string // owner/name of the repo whose workflows the actions start
+  branch?: string
+}
+
+export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (...a) => fetch(...a)): OrbitApi {
+  const { dataRepo, codeRepo, branch = 'site' } = source
+  let declined = false
 
   const token = (): string => {
     const saved = load<string>(TOKEN_KEY, '')
     if (saved) return saved
+    if (declined) throw new ApiError(401, 'No GitHub token, so there is nothing to show. Reload the page to enter one.')
     const entered = (
       window.prompt(
-        `To act from this page, paste a GitHub fine-grained token for ${repo} with "Actions: Read and write". ` +
-          'It is kept only in this browser.',
+        `Orbit reads your data from ${dataRepo} and acts through ${codeRepo}. Paste a GitHub fine-grained token with ` +
+          `"Contents: Read" on ${dataRepo} and "Actions: Read and write" on ${codeRepo}. It is kept only in this browser.`,
       ) ?? ''
     ).trim()
-    if (!entered) throw new ApiError(401, 'No GitHub token entered, so nothing was sent.')
+    if (!entered) {
+      declined = true
+      throw new ApiError(401, 'No GitHub token entered, so there is nothing to show. Reload the page to enter one.')
+    }
     save(TOKEN_KEY, entered)
     return entered
   }
 
+  const refused = (status: number): ApiError => {
+    save(TOKEN_KEY, '')
+    declined = true // the other screens' requests would each ask again; one ask per page load
+    return new ApiError(status, 'GitHub refused the token (expired, or missing a permission). It was forgotten: reload to enter another.')
+  }
+
+  const cache = new Map<string, { at: number; value: Promise<unknown> }>()
+  const fetchFile = async (file: string): Promise<unknown> => {
+    let res: Response
+    try {
+      res = await fetcher(`https://api.github.com/repos/${dataRepo}/contents/${file}?ref=${branch}`, {
+        headers: { Authorization: `Bearer ${token()}`, Accept: 'application/vnd.github.raw+json', 'X-GitHub-Api-Version': '2022-11-28' },
+      })
+    } catch (e) {
+      if (e instanceof ApiError) throw e
+      throw new ApiError(0, 'Could not reach GitHub. Check your connection.')
+    }
+    if (res.status === 401 || res.status === 403) throw refused(res.status)
+    if (res.status === 404) throw new ApiError(404, 'Not published yet. The next GitHub Actions run publishes it (hourly).')
+    if (!res.ok) throw new ApiError(res.status, `${res.status} loading ${file}`)
+    const body = await res.json()
+    if (body && typeof body === 'object' && '__error' in body) throw new ApiError(body.__error.status, body.__error.detail)
+    return body
+  }
+  const get = <T>(file: string): Promise<T> => {
+    const hit = cache.get(file)
+    if (hit && Date.now() - hit.at < CACHE_MS) return hit.value as Promise<T>
+    const value = fetchFile(file)
+    cache.set(file, { at: Date.now(), value })
+    value.catch(() => cache.delete(file)) // never cache a failure
+    return value as Promise<T>
+  }
+
   const dispatch = async (workflow: string, inputs: Record<string, string>): Promise<void> => {
-    if (!repo) throw new ApiError(500, 'This build has no GitHub repo configured (VITE_ORBIT_GITHUB_REPO).')
-    const res = await fetcher(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+    const res = await fetcher(`https://api.github.com/repos/${codeRepo}/actions/workflows/${workflow}/dispatches`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token()}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
       body: JSON.stringify({ ref: 'main', inputs }),
     })
-    if (res.status === 401 || res.status === 403 || res.status === 404) {
-      save(TOKEN_KEY, '')
-      throw new ApiError(res.status, 'GitHub refused the token (expired, or without "Actions: Read and write" on the repo). It was forgotten; try again to enter another.')
-    }
+    if (res.status === 401 || res.status === 403 || res.status === 404) throw refused(res.status)
     if (res.status !== 204) throw new ApiError(res.status, `GitHub answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    cache.clear() // so the screens pick up the result as soon as it's published
   }
 
   /** Your recent decisions the published snapshot doesn't show yet. */

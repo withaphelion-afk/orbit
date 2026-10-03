@@ -74,6 +74,3 @@ jobs:
         run: uv run python scripts/sync_data.py
       - name: Publish the web terminal's data
         uses: ./.github/actions/publish-terminal
-        with:
-          hf-token: ${{ secrets.HF_TOKEN }}
-          hf-space: ${{ vars.HF_SPACE }}

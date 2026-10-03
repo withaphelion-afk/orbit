@@ -42,7 +42,6 @@ ATR_WINDOW = 14
 # Integer codes used inside the vectorised maths.
 NEUTRAL, BIG_UP, BIG_DOWN, SIDEWAYS, UNDEFINED = 0, 1, 2, 3, -1
 CODE_TO_OUTCOME = {NEUTRAL: Outcome.NEUTRAL, BIG_UP: Outcome.BIG_UP, BIG_DOWN: Outcome.BIG_DOWN, SIDEWAYS: Outcome.SIDEWAYS}
-OUTCOME_TO_CODE = {v: k for k, v in CODE_TO_OUTCOME.items()}
 
 
 @dataclass

@@ -31,7 +31,6 @@ Events:
 from __future__ import annotations
 
 import json
-from datetime import timezone
 
 import numpy as np
 

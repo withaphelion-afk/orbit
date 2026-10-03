@@ -42,7 +42,6 @@ STITCH_MAX_MEDIAN_DIFF = 0.03
 STITCH_OVERLAP_DAYS = 90
 
 # --- Ephemeris ---------------------------------------------------------------
-EPHEMERIS_YEARS_OF_HISTORY = 60
 EPHEMERIS_YEARS_AHEAD = 2  # so upcoming transits can be shown
 
 # --- Transit playbook (analysis/) --------------------------------------------
@@ -61,7 +60,6 @@ FDR_STRONG = 0.05
 FDR_MODERATE = 0.10
 NOMINAL_ALPHA = 0.05
 MIN_SHIFT_GAP_DAYS = 30  # circular shifts this close to the real calendar are skipped
-UNIFORM_NULL_DRAWS = 2000
 SIDEWAYS_HORIZONS = [10, 20]
 INCLUDE_MOON = True
 # Hourly drill-down from each transit's exact moment (analysis/timing.py).
