@@ -40,25 +40,24 @@ There is no server. GitHub Actions jobs do all the work and publish their result
 
 | Where | What | When |
 | --- | --- | --- |
-| GitHub Actions `runner` | One runner cycle: new bars, features, suggestions created/expired/resolved; then publishes | Hourly, started by a cron-job.org job (a POST to the workflow's dispatches endpoint with a token that has Actions: write); GitHub's own schedule skipped most runs |
+| GitHub Actions `runner` | One runner cycle: new bars, features, the divergence model retrained and scored, alerts, suggestions created/expired/resolved; then publishes | Hourly, started by **cron-job.org** (see setup step 4); GitHub's own schedule skipped most runs, so it's off |
 | GitHub Actions `analysis` | Playbook, backtest, feedback loop and Vedic model (placebo check on Sundays); then publishes | Daily 00:30 UTC, and from RUN ANALYSIS |
 | GitHub Actions `decide` | Logs your Take / Skip / Modify in the journal; then publishes | When you click it |
+| GitHub Actions `label` | Saves your ✓ real / ✗ not real on a divergence, for the next retrain | When you click it |
 | Private repo `orbit-data` | `data`: prices, silver cache, kernel, journal. `outputs`: computed results. `site`: every API answer as a JSON file, for the web terminal | Written by every job |
-| Vercel | The web terminal (public, installable, holds no data) | Deployed after every green CI run on `main` |
+| Vercel | The web terminal (installable), plus its small login service (`web/vercel/api`) | Deployed after every green CI run on `main` |
 
-**Your data stays private.** The app on Vercel is an empty shell: it reads the `site` branch of the private `orbit-data` repo through GitHub, with your own token. Without the token it shows nothing.
+**Your data stays private behind one login.** The app on Vercel holds no data. After you log in, its login service reads the `site` branch of the private `orbit-data` repo, and starts the `decide`, `label` and `analysis` jobs, with a GitHub token that stays on Vercel's side and never reaches a browser.
 
 ### Using the web terminal
 
 1. Open **https://orbit-inky-psi.vercel.app** (the Vercel project `orbit`; each **deploy web** run also prints it).
 2. **Install it:** in Chrome, click the install icon at the right of the address bar (or ⋮ → Cast, save and share → Install page as app). It then opens in its own window like a desktop app, with its own icon. On Android: ⋮ → Add to Home screen.
-3. The first time, it asks for a GitHub token, which is kept only in that browser. Make a fine-grained token at [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new):
-   - Repository access: **only `orbit` and `orbit-data`**
-   - Permissions: **Contents: Read** and **Actions: Read and write**
+3. **Log in** with the shared username and password (default **`saksham` / `00000000`**). The same login works on every device, and each device stays logged in for 30 days. To change it, set the variable `ORBIT_LOGIN_USER` and the secret `ORBIT_LOGIN_PASSWORD` in `orbit` → Settings → Secrets and variables → Actions; it applies from the next deploy. The defaults are visible in this public repo, so a stronger password is safer.
 
 What updates when:
 - **Live prices** for BTC, ETH and SOL come straight from Binance in your browser. Silver shows its last stored close.
-- **Everything else** is as fresh as the last job, which runs hourly.
+- **Everything else** is as fresh as the last runner job, hourly.
 - **Take / Skip / Modify** reaches the journal in about 1–5 minutes, and an analysis run in about 20 (60 with the placebo check).
 
 ### One-time setup
@@ -71,17 +70,24 @@ Done by the repo owner (`withaphelion-afk`), because tokens can only reach repos
    ```
    Seed it from a machine that has the data: `python scripts/sync_data.py --recreate` with `ORBIT_DATA_SYNC_REMOTE=data`.
 2. **Secrets and variable** in `orbit` → Settings → Secrets and variables → Actions:
-   - Secret `ORBIT_DATA_TOKEN`: fine-grained token, repository access **only `orbit-data`**, **Contents: Read and write**. The jobs use it.
+   - Secret `ORBIT_DATA_TOKEN`: fine-grained token, repository access **`orbit-data` and `orbit`**: **Contents: Read and write** (the jobs write the data) and **Actions: Read and write** (the site's login service starts `decide`, `label` and `analysis` with it). Without the Actions permission the site still shows everything, but Take/Skip, ✓/✗ and RUN ANALYSIS fail.
    - Secret `VERCEL_TOKEN`: a Vercel token (vercel.com → Account Settings → Tokens).
    - Variable `ORBIT_DATA_REPO` = `withaphelion-afk/orbit-data`.
-3. **Start it:** in Actions, run **runner** (it publishes the data), then **deploy web** (it creates the Vercel project `orbit`). After that everything runs by itself.
+3. **Start it:** in Actions, run **runner** (it publishes the data), then **deploy web** (it creates the Vercel project `orbit`). Deploying also hands the login service its settings: the token from `ORBIT_DATA_TOKEN` and the login.
+4. **Hourly runner trigger** (cron-job.org, free). GitHub's own schedule skipped most runs, so an outside timer starts the runner:
+   - Make a fine-grained token with repository access **only `orbit`** and **Actions: Read and write**, with an expiry date (renew it before then).
+   - In cron-job.org, create a job by **importing this curl**, with your token pasted in:
+     ```bash
+     curl -X POST "https://api.github.com/repos/withaphelion-afk/orbit/actions/workflows/runner.yml/dispatches" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer YOUR_GITHUB_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" -H "Content-Type: application/json" -d "{\"ref\":\"main\"}"
+     ```
+   - Schedule: **every hour at minute 17**. Success is **204** (empty answer); turn on failure emails. Two runs never overlap, so an extra trigger is harmless.
 
 ### Things to know
 
-- **Scheduled jobs:** GitHub turns them off after 60 days with no activity in the repo, and these jobs write to `orbit-data`, not here. The daily `analysis` job re-enables both scheduled workflows with its own token, which resets the clock. If the analysis ever stops for 60 days, re-enable them in the Actions tab.
+- **Scheduled jobs:** only `analysis` (daily 00:30 UTC) still uses GitHub's schedule. GitHub turns schedules off after 60 days with no activity in the repo; the analysis job re-enables itself, which resets the clock. If it ever stops for 60 days, re-enable it in the Actions tab.
 - **Until the setup is done**, `runner`, `analysis` and `decide` are skipped (not failed): they wait for the `ORBIT_DATA_REPO` variable. `deploy web` does nothing until `VERCEL_TOKEN` is set.
 - **This repo's Actions logs are public.** They show prices, the regime and counts, never your journal.
-- **Scheduled jobs can start a few minutes late.** The SYS screen shows the last cycle and the next analysis.
+- **If RUNNER shows STALE on the site**, the hourly trigger stopped: check the cron-job.org job's history (an expired token gives 401). You can always run **runner** by hand from the Actions tab.
 - **Binance through `data-api.binance.vision`:** `api.binance.com` refuses US addresses, which is where GitHub's servers are. The mirror serves the same market data. `scripts/probe_sources.py` (or the `probe sources` workflow) checks every price source from a given host.
 
 ## Run it on your machine
