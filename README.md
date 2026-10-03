@@ -7,7 +7,7 @@ It also runs a research track that tests, with strict statistics, whether Vedic 
 This is a learning project too: modules are written to be read, and comments explain *why*.
 
 **Two ways to run it:**
-- **In the cloud, free, with no PC on.** GitHub Actions does the work, and the web terminal is an installable app on Vercel. See [Cloud](#cloud-free-no-pc-needed).
+- **In the cloud, free, with no PC on.** GitHub Actions does the work, and the web terminal is an installable app at **https://orbit-inky-psi.vercel.app**. See [Cloud](#cloud-free-no-pc-needed).
 - **On your own machine** (Windows, macOS, Linux), with a live local server. See [Run it on your machine](#run-it-on-your-machine).
 
 ## Core ideas
@@ -50,7 +50,7 @@ There is no server. GitHub Actions jobs do all the work and publish their result
 
 ### Using the web terminal
 
-1. Open the Vercel URL. It's printed in the summary of the latest **deploy web** run in the Actions tab.
+1. Open **https://orbit-inky-psi.vercel.app** (the Vercel project `orbit`; each **deploy web** run also prints it).
 2. **Install it:** in Chrome, click the install icon at the right of the address bar (or ⋮ → Cast, save and share → Install page as app). It then opens in its own window like a desktop app, with its own icon. On Android: ⋮ → Add to Home screen.
 3. The first time, it asks for a GitHub token, which is kept only in that browser. Make a fine-grained token at [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new):
    - Repository access: **only `orbit` and `orbit-data`**
