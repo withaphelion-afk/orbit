@@ -229,7 +229,8 @@ The repo owner (`withaphelion-afk`) does this, because tokens can only reach rep
 
 ### Things to know
 
-- **GitHub turns off scheduled workflows after 60 days with no activity in the repo.** The jobs write to `orbit-data`, not here, so after two quiet months re-enable `runner` and `analysis` from the Actions tab (GitHub emails a warning first).
+- **GitHub turns off scheduled workflows after 60 days with no activity in the repo**, and these jobs write to `orbit-data`, not here. The daily `analysis` job therefore re-enables `runner` and `analysis` at the end of every run (with the job's own token), which resets that clock. If the analysis ever stops for 60 days, re-enable both from the Actions tab.
+- **Until the setup is done, `runner` and `analysis` are skipped**, not failed: they wait for the `ORBIT_DATA_REPO` variable.
 - **This repo's Actions logs are public.** They show prices, regime and counts, never your journal.
 - **Scheduled jobs can start a few minutes late** when GitHub is busy. The SYS screen shows the last cycle and the next analysis.
 - **Binance through `data-api.binance.vision`.** `api.binance.com` refuses US addresses, which is where GitHub's and Hugging Face's servers are. The mirror serves the same market data. `scripts/probe_sources.py` (or the `probe sources` workflow) checks every price source from a given host.

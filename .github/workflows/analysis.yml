@@ -37,7 +37,12 @@ env:
 
 jobs:
   analysis:
+    # Skipped (not failed) until the one-time cloud setup sets this variable (README: Free cloud hosting).
+    if: vars.ORBIT_DATA_REPO != ''
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # only for the keep-alive step below
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +82,16 @@ jobs:
       - name: Share results
         if: always()
         run: uv run python -m orbit.outputs --publish
+      - name: Keep the schedules alive
+        # GitHub disables scheduled workflows after 60 days without activity in this repo, and these jobs
+        # write to the data repo, not here. Re-enabling them every day resets that clock.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in runner.yml analysis.yml; do
+            gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/enable" || echo "::warning::could not re-enable ${wf}"
+          done
       - name: Report a failed run
         if: steps.run.outcome == 'failure'
         run: |

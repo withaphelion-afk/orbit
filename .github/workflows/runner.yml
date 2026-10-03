@@ -23,6 +23,8 @@ env:
 
 jobs:
   cycle:
+    # Skipped (not failed) until the one-time cloud setup sets this variable (README: Free cloud hosting).
+    if: vars.ORBIT_DATA_REPO != ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
