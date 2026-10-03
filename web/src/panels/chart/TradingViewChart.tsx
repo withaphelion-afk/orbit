@@ -33,6 +33,7 @@ function embed(el: HTMLElement, symbol: string, interval: string) {
     hide_side_toolbar: false,
     save_image: false,
     calendar: false,
+    studies: ['STD;RSI'], // RSI(14) in its own pane under price, as TradingView draws it
     support_host: 'https://www.tradingview.com',
   })
   el.appendChild(script)

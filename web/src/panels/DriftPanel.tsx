@@ -105,9 +105,10 @@ function Note({ children }: { children: ReactNode }) {
 
 export function DriftPanel({ hidden }: { hidden: boolean }) {
   const [view, setView] = useState<View>('DRIFT')
+  const [tf, setTf] = useState<'1d' | '4h'>('1d')
   const { components, error: sysError, isPending: sysPending } = useComponents()
   const built = !!components?.backtest
-  const drift = useDrift(built)
+  const drift = useDrift(built, tf)
   const d = drift.data
   const tonePill = d?.status === 'OK' ? 'ok' : d?.status === 'WATCH' ? 'watch' : 'drift'
   return (
@@ -119,6 +120,17 @@ export function DriftPanel({ hidden }: { hidden: boolean }) {
       tools={
         <>
           <Seg label="View" value={view} onChange={setView} options={VIEWS.map((v) => ({ label: v, value: v }))} />
+          {view !== 'FEEDBACK' && (
+            <Seg
+              label="Timeframe"
+              value={tf}
+              onChange={setTf}
+              options={[
+                { label: '1D', value: '1d' as const },
+                { label: '4H', value: '4h' as const },
+              ]}
+            />
+          )}
           {view === 'DRIFT' && d && (
             <div className="dr-status">
               <Pill
@@ -144,7 +156,7 @@ export function DriftPanel({ hidden }: { hidden: boolean }) {
       ) : view === 'DRIFT' ? (
         d ? <DriftView d={d} /> : <QueryState isPending={drift.isPending} error={drift.error} what="drift" />
       ) : view === 'BACKTEST' ? (
-        <BacktestView />
+        <BacktestView tf={tf} />
       ) : (
         <FeedbackView />
       )}
@@ -320,10 +332,13 @@ function StatsRow({ label, s, className }: { label: string; s: BacktestStats; cl
   )
 }
 
-function BacktestView() {
+function BacktestView({ tf }: { tf: '1d' | '4h' }) {
   const { data, isPending, error } = useBacktest(true)
   if (!data) return <QueryState isPending={isPending} error={error} what="the backtest" />
-  return <BacktestBody b={data} />
+  // 4H and 1D are backtested apart; each keeps its own pooled and per-asset results.
+  const part = data.timeframes?.[tf]
+  if (!part?.pooled?.trades) return <QueryState isPending={false} error={new Error(`No ${tf.toUpperCase()} trades in the backtest yet.`)} what="the backtest" />
+  return <BacktestBody key={tf} b={{ ...data, pooled: part.pooled, assets: part.assets }} />
 }
 
 function BacktestBody({ b }: { b: BacktestReport }) {
@@ -366,8 +381,9 @@ function BacktestBody({ b }: { b: BacktestReport }) {
 
       <div className="dr-body">
         <Note>
-          {b.strategy} on daily bars, every asset's full stored history: entry at the next open, stop beyond the swing, target 2R, out after 30
-          bars, one trade at a time, costs and slippage included. Parameters are textbook, not fitted. Run {day(b.generated_at)}.
+          {b.strategy}. Only divergences the model scored above the alert threshold out-of-sample (it never saw what came next) are traded: entry
+          at the next open, stop at the swing extreme, target 2R, out after the timeframe's horizon, one trade at a time per asset, costs and
+          slippage included. Run {day(b.generated_at)}.
         </Note>
 
         <Card title="By asset">
@@ -481,10 +497,10 @@ function FeedbackBody({ c }: { c: CalibrationReport }) {
         <StatCard
           label="Learned from"
           value={c.n_backtest + c.n_live}
-          caption={`${c.n_backtest} backtest + ${c.n_live} live`}
+          caption={`${c.n_backtest} graded by the market + ${c.n_live} labelled by you`}
           icon={<Database {...ico} />}
         />
-        <StatCard label="Plain win rate" value={pct(c.base_win_rate)} caption="The baseline the model has to beat" icon={<Percent {...ico} />} />
+        <StatCard label="Plain rate" value={pct(c.base_win_rate)} caption="Share of divergences that worked: the baseline to beat" icon={<Percent {...ico} />} />
         <StatCard
           label="Out-of-sample Brier"
           value={o ? num(o.brier, 4) : '—'}
@@ -503,7 +519,7 @@ function FeedbackBody({ c }: { c: CalibrationReport }) {
           label="Sets confidence?"
           value={c.skill ? 'YES' : 'NOT YET'}
           tone={c.skill ? 'up' : 'warn'}
-          caption={c.skill ? 'Beat the plain win rate on unseen years' : 'Plain win rate used until it does'}
+          caption={c.skill ? 'Beat the plain rate on later data it hadn’t seen' : 'Scores shown as unproven until it does'}
           icon={c.skill ? <ShieldCheck {...ico} /> : <ShieldAlert {...ico} />}
         />
       </StatGrid>
@@ -511,8 +527,8 @@ function FeedbackBody({ c }: { c: CalibrationReport }) {
       <div className="dr-body">
         <Note>
           {c.skill
-            ? 'The model beat the plain win rate on years it had not seen, so each suggestion’s confidence is its estimated chance of winning.'
-            : `The model has not beaten the plain win rate on years it had not seen, so every suggestion gets the plain win rate (${pct(c.base_win_rate)}) as confidence. It retrains on every analysis run with each new live outcome counted 3×, and takes over if it starts to beat that.`}
+            ? 'The model beat the plain rate on later divergences it had not seen, so its scores are trusted.'
+            : `The model has not yet beaten the plain rate (${pct(c.base_win_rate)} of divergences worked) on later divergences it had not seen, so every score is shown as unproven. It retrains every hour on everything the market has graded plus your ✓/✗ (each counted 5×).`}
           {c.note ? ` ${c.note}` : ''} Trained {day(c.trained_at)}.
         </Note>
 

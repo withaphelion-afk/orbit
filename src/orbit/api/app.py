@@ -445,6 +445,14 @@ def create_app(live: bool = True) -> FastAPI:
         return {"generated_at": rec["generated_at"], "trusted": rec["trusted"], "thresholds": rec["thresholds"],
                 "candidates": {tf: v for tf, v in by_tf.items() if timeframe in (None, tf)}}
 
+    @app.get("/api/bars/{asset}")
+    def chart_bars(asset: Asset, timeframe: str = Query("1d", pattern="^(1h|4h|1d|1w)$"), limit: int = Query(1000, ge=50, le=5000)):
+        """The last `limit` completed bars at 1H/4H/1D/1W as [time, open, high, low, close, volume] rows (time: epoch seconds)."""
+        from orbit.strategy import bars as bars_mod
+
+        b = bars_mod.load(asset, timeframe).tail(limit)
+        return [[int(b.time[k]), float(b.open[k]), float(b.high[k]), float(b.low[k]), float(b.close[k]), float(b.volume[k])] for k in range(len(b))]
+
     @app.get("/api/alerts")
     def alerts(days: int = Query(14, ge=1, le=365)):
         """Confirmed divergences that scored above their timeframe's threshold, newest first."""

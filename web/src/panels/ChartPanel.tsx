@@ -1,6 +1,6 @@
-import { lazy, Suspense, useMemo } from 'react'
-import { useCandles, useComponents, useSignals, useSuggestions, useTransits } from '../api/hooks'
-import type { TransitView } from '../api/types'
+import { lazy, Suspense } from 'react'
+import { useComponents, useSuggestions } from '../api/hooks'
+import type { Timeframe } from '../api/types'
 import { QueryState, Seg } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META, TV_INTERVALS } from '../config'
@@ -14,8 +14,8 @@ const MODES: { label: string; value: ChartMode }[] = [
   { label: 'LIVE', value: 'LIVE' },
   { label: 'ORBIT', value: 'ORBIT' },
 ]
-const SLOW = new Set(['JUPITER', 'SATURN', 'RAHU', 'KETU'])
-const ALWAYS = new Set(['STATION_RETROGRADE', 'STATION_DIRECT', 'SOLAR_ECLIPSE', 'LUNAR_ECLIPSE'])
+
+const TF_OF: Record<string, Timeframe> = { '60': '1h', '240': '4h', D: '1d', W: '1w' }
 
 export function ChartPanel({ hidden }: { hidden: boolean }) {
   const asset = useTerminal((s) => s.asset)
@@ -25,75 +25,43 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
   const setInterval = useTerminal((s) => s.setTvInterval)
   const meta = ASSET_META[asset]
   const live = mode === 'LIVE'
+  const tf = TF_OF[interval] ?? '1d'
 
   return (
     <Panel
       code="GP"
       hidden={hidden}
-      title={`${meta.name} · ${live ? 'TradingView live' : 'Orbit daily, full history'}`}
+      title={`${meta.name} · ${live ? 'TradingView live' : 'Orbit divergences'}`}
       description={
         live
-          ? `${meta.pair} streamed live by TradingView; switch to ORBIT for Orbit's own daily history with its signals, transits and trade levels.`
-          : `${meta.pair} on Orbit's stored daily history, marking regime flips, RSI divergences, Vedic transits and any pending trade's levels.`
+          ? `${meta.pair} streamed live by TradingView, with its RSI(14) under price; switch to ORBIT for Orbit's own divergence detection, scores and your ✓/✗.`
+          : `${meta.pair} with RSI(14), every divergence Orbit finds (solid once confirmed, dashed while forming), the learned model's score, and ✓/✗ to teach it.`
       }
       tools={
         <>
-          <div className="gp-tool" title={live ? 'Bar interval of the live chart' : "Orbit's own chart is daily bars only"}>
+          <div className="gp-tool" title="Bar interval, for both charts">
             <span className="gp-tool-lbl">Interval</span>
-            {live ? (
-              <Seg label="Interval" value={interval} onChange={setInterval} options={TV_INTERVALS.map((i) => ({ label: i.label, value: i.value }))} />
-            ) : (
-              <Seg label="Interval" value="D" onChange={() => {}} options={[{ label: '1D', value: 'D' }]} />
-            )}
+            <Seg label="Interval" value={interval} onChange={setInterval} options={TV_INTERVALS.map((i) => ({ label: i.label, value: i.value }))} />
           </div>
-          <div className="gp-tool gp-src" title="LIVE: TradingView's streamed chart. ORBIT: Orbit's stored daily history with its own markers.">
+          <div className="gp-tool gp-src" title="LIVE: TradingView's streamed chart with its RSI. ORBIT: Orbit's live divergence chart.">
             <span className="gp-tool-lbl">Source</span>
             <Seg label="Chart source" value={mode} onChange={setMode} options={MODES} />
           </div>
         </>
       }
     >
-      {live ? (
-        <TradingViewChart symbol={meta.tvSymbol} interval={interval} />
-      ) : (
-        <OrbitChartData />
-      )}
+      {live ? <TradingViewChart symbol={meta.tvSymbol} interval={interval} /> : <OrbitChartData tf={tf} />}
     </Panel>
   )
 }
 
-/** Which Vedic events to mark: every station (vakri / margi) and eclipse, the slow
- * grahas' rashi changes (Guru, Shani, Rahu, Ketu), and anything the playbook rates
- * weak or better for this asset. Everything else (hundreds of drishti, yuti and
- * nakshatra changes a year) would bury the chart. */
-function markable(v: TransitView, asset: string) {
-  const e = v.event
-  if (v.notable.some((n) => n.asset === asset)) return true
-  if (ALWAYS.has(e.event_type)) return e.planet !== 'RAHU' && e.planet !== 'KETU'
-  return e.event_type === 'INGRESS' && SLOW.has(e.planet) && e.planet !== 'KETU' // Ketu mirrors Rahu
-}
-
-function OrbitChartData() {
+function OrbitChartData({ tf }: { tf: Timeframe }) {
   const asset = useTerminal((s) => s.asset)
-  const candles = useCandles(asset)
-  const signals = useSignals(asset)
-  const first = candles.data?.[0]?.timestamp
-  // End at today's date, not "now": a timestamp that changes every render would refetch in a loop.
-  const transits = useTransits(first, `${new Date().toISOString().slice(0, 10)}T23:59:59Z`)
   const { components } = useComponents()
   const suggestions = useSuggestions(!!components?.strategy)
-  const marks = useMemo(() => (transits.data ?? []).filter((v) => markable(v, asset)), [transits.data, asset])
-
-  if (!candles.data) return <QueryState isPending={candles.isPending} error={candles.error} what="candles" />
   return (
     <Suspense fallback={<QueryState isPending error={null} what="chart" />}>
-      <OrbitChart
-        asset={asset}
-        candles={candles.data}
-        signals={signals.data ?? []}
-        transits={marks}
-        pending={suggestions.data?.find((s) => s.suggestion.asset === asset)}
-      />
+      <OrbitChart asset={asset} tf={tf} pending={suggestions.data?.find((s) => s.suggestion.asset === asset)} />
     </Suspense>
   )
 }

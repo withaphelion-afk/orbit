@@ -188,12 +188,14 @@ export function HelpPanel({ hidden }: { hidden: boolean }) {
 
             <Card icon={<Scale {...ICON} />} title="How Orbit decides">
               <p>
-                One strategy runs: RSI(14) divergence on daily bars. A lower price low with a higher RSI low is bullish; a higher high with a lower
-                RSI high is bearish. Stop beyond the swing, target 2R, out after 30 bars. It is backtested on the full history every analysis run.
+                One strategy runs: RSI(14) divergence, found broadly on 1H, 4H, 1D and 1W (every pair of swings 5–60 bars apart where price and
+                RSI disagree, regular and hidden, with no RSI zone or ATR rule). The same algorithm runs in the browser, live on the ORBIT chart.
               </p>
               <p>
-                Confidence comes from the feedback loop: a model of which divergences actually worked, retrained on every run with the backtest plus
-                every live outcome. It only sets confidence once it beats the plain win rate out-of-sample; until then confidence is that win rate.
+                A model learns which ones matter. The market grades every divergence (did price make the asset's usual big move its way before the
+                same move against?), your ✓ real / ✗ not real counts five times as much, and it retrains every hour. Its scores are marked unproven
+                until it beats the plain rate on data it hasn't seen. Divergences in the top 20% of their timeframe raise alerts (ALERTS, F9); on 4H
+                and 1D they also become suggestions: entry at the close, stop at the swing extreme, target 2R.
               </p>
               <p>
                 Nothing executes on its own. You take, skip or modify every suggestion, and each decision goes to the journal. Every suggestion is

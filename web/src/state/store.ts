@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Asset } from '../api/types'
+import type { AlertItem, Asset } from '../api/types'
 import { ASSETS, type TvInterval } from '../config'
 import { parseCommand, type View } from '../lib/commands'
 
@@ -22,6 +22,8 @@ interface TerminalState {
   feedConnected: boolean
   paletteOpen: boolean
   toast: Toast | null
+  liveAlerts: AlertItem[] // divergences the browser saw confirm on the open chart, before the runner publishes them
+  seenAlerts: string[] // alert ids already shown in ALERTS (for the navigation badge)
 
   setView: (v: View) => void
   setAsset: (a: Asset) => void
@@ -31,6 +33,8 @@ interface TerminalState {
   setFeedConnected: (ok: boolean) => void
   setPaletteOpen: (open: boolean) => void
   notify: (text: string, error?: boolean) => void
+  addLiveAlert: (a: AlertItem) => void
+  markAlertsSeen: (ids: string[]) => void
 }
 
 // Per-viewer conveniences only; the app works identically without storage.
@@ -59,6 +63,14 @@ export const useTerminal = create<TerminalState>((set) => ({
   feedConnected: false,
   paletteOpen: false,
   toast: null,
+  liveAlerts: [],
+  seenAlerts: (() => {
+    try {
+      return JSON.parse(remember('seenAlerts') ?? '[]') as string[]
+    } catch {
+      return []
+    }
+  })(),
 
   setView: (view) => set({ view }),
   setAsset: (asset) => {
@@ -78,6 +90,13 @@ export const useTerminal = create<TerminalState>((set) => ({
   setFeedConnected: (feedConnected) => set({ feedConnected }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   notify: (text, error = false) => set({ toast: { id: Date.now(), text, error } }),
+  addLiveAlert: (a) => set((s) => (s.liveAlerts.some((x) => x.id === a.id) ? s : { liveAlerts: [a, ...s.liveAlerts].slice(0, 100) })),
+  markAlertsSeen: (ids) =>
+    set((s) => {
+      const seenAlerts = [...new Set([...s.seenAlerts, ...ids])].slice(-2000)
+      remember('seenAlerts', JSON.stringify(seenAlerts))
+      return { seenAlerts }
+    }),
 }))
 
 /** Runs a command-line string against the terminal. Shared by the command bar and palette. */

@@ -23,6 +23,7 @@ import { day, num, price, signed, tone } from '../lib/format'
 
 type Filter = 'ALL' | 'TAKEN' | 'SKIPPED' | 'MODIFIED' | 'EXPIRED' | 'OPEN'
 type SortKey = 'date' | 'asset' | 'conf' | 'pnl'
+type TfFilter = 'ALL' | '4h' | '1d'
 
 const FILTERS: Filter[] = ['ALL', 'TAKEN', 'SKIPPED', 'MODIFIED', 'EXPIRED', 'OPEN']
 const NO_ROWS: JournalRow[] = []
@@ -43,6 +44,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
   const journal = useJournal(built)
   const data = journal.data ?? NO_ROWS
   const [filter, setFilter] = useState<Filter>('ALL')
+  const [tfFilter, setTfFilter] = useState<TfFilter>('ALL')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'date', dir: -1 })
 
   const stats = useMemo(() => {
@@ -63,11 +65,12 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
 
   const rows = useMemo(() => {
     const f = data.filter((r) =>
-      filter === 'ALL' ? true : filter === 'OPEN' ? isOpen(r) : filter === 'EXPIRED' ? r.expired : r.entry.decision === filter && !r.expired,
+      (tfFilter === 'ALL' || (r.timeframe ?? '1d') === tfFilter) &&
+      (filter === 'ALL' ? true : filter === 'OPEN' ? isOpen(r) : filter === 'EXPIRED' ? r.expired : r.entry.decision === filter && !r.expired),
     )
     const get = sortValue[sort.key]
     return f.slice().sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir)
-  }, [data, filter, sort])
+  }, [data, filter, sort, tfFilter])
 
   const th = (key: SortKey, label: string, cls = '', title = `Sort by ${label}`) => {
     const on = sort.key === key
@@ -93,6 +96,16 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
       tools={
         <>
           <Seg label="Filter" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ label: f, value: f }))} />
+          <Seg
+            label="Timeframe"
+            value={tfFilter}
+            onChange={setTfFilter}
+            options={[
+              { label: 'ALL TF', value: 'ALL' as TfFilter },
+              { label: '4H', value: '4h' as TfFilter },
+              { label: '1D', value: '1d' as TfFilter },
+            ]}
+          />
           {loaded && (
             <span className="jr-count">
               {filter === 'ALL' ? `${data.length} ${data.length === 1 ? 'entry' : 'entries'}` : `${rows.length} of ${data.length}`}
@@ -148,6 +161,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
                       <tr>
                         {th('date', 'Date', 'l')}
                         {th('asset', 'Asset', 'l')}
+                        <th className="l" title="The bars the suggestion lived on">TF</th>
                         <th className="l">Dir</th>
                         <th className="l">Decision</th>
                         <th className="l" title="Why the position closed: target, stop or time">
@@ -170,6 +184,7 @@ export function JournalPanel({ hidden }: { hidden: boolean }) {
                           <tr key={r.id} className={r.expired ? 'expired' : undefined}>
                             <td className="l mid">{day(r.decided_at)}</td>
                             <td className="l strong">{ASSET_META[s.asset].label}</td>
+                            <td className="l mid">{(r.timeframe ?? '1d').toUpperCase()}</td>
                             <td className={`l ${s.direction === 'LONG' ? 'up' : 'down'}`}>
                               <span className="jr-dir">
                                 {s.direction === 'LONG' ? <ArrowUpRight size={14} strokeWidth={2} aria-hidden="true" /> : <ArrowDownRight size={14} strokeWidth={2} aria-hidden="true" />}

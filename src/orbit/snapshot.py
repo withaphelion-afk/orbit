@@ -19,7 +19,7 @@ web/src/api/static.ts:
     projections.json         upcoming projections, the default view (60 days, weak and above)
     projections-all.json     180 days ahead, "none" rows included
     projections-track.json   the forward track record's summary
-    candles/{ASSET}.json, signals/{ASSET}.json, divergences/{ASSET}.json, playbook/{ASSET}.json, model/{ASSET}.json
+    candles/{ASSET}.json, signals/{ASSET}.json, divergences/{ASSET}.json, bars/{ASSET}_{TF}.json, playbook/{ASSET}.json, model/{ASSET}.json
     patterns/{ASSET}/{hex of the pattern id}.json
     hourly/{ASSET}/{YEAR}.json   hourly bars as [time, open, high, low, close, volume] rows
     analysis/runs.json, analysis/current.json, analysis/schedule.json
@@ -116,6 +116,8 @@ def build(out: Path) -> int:
         _render(client, out, f"candles/{a}.json", f"/api/candles/{a}")
         _render(client, out, f"signals/{a}.json", f"/api/signals/{a}")
         _render(client, out, f"divergences/{a}.json", f"/api/divergences/{a}")
+        for tf in ("1h", "4h", "1d", "1w"):
+            _render(client, out, f"bars/{a}_{tf}.json", f"/api/bars/{a}?timeframe={tf}")
         _render(client, out, f"model/{a}.json", f"/api/model/{a}")
         playbook = store.playbook(asset)
         if _render(client, out, f"playbook/{a}.json", f"/api/playbook/{a}") and playbook:

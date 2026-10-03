@@ -11,6 +11,7 @@ import './styles/screens/drift.css'
 import './styles/screens/astro.css'
 import './styles/screens/system.css'
 import './styles/screens/help.css'
+import './styles/screens/chart.css'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } },

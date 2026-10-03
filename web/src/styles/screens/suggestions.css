@@ -14,7 +14,7 @@
 /* list */
 .p-SUGG .slist { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .p-SUGG .slist-head,
-.p-SUGG .srow { display: grid; grid-template-columns: 58px 40px minmax(64px, 1fr) 36px 58px 16px; gap: 10px; align-items: center; }
+.p-SUGG .srow { display: grid; grid-template-columns: 58px 40px 28px minmax(64px, 1fr) 36px 58px 16px; gap: 10px; align-items: center; }
 .p-SUGG .slist-head {
   padding: 13px 20px 11px; border-bottom: 1px solid var(--line);
   font: 600 10px/1 var(--ui); letter-spacing: 0.12em; color: var(--text-3); text-transform: uppercase;
@@ -163,3 +163,4 @@
   .p-SUGG .sg-div { grid-template-columns: minmax(0, 1fr) auto; }
   .p-SUGG .sg-div-sig { grid-column: 1 / -1; grid-row: 2; }
 }
+.p-SUGG .srow .tf { font: 600 10px/1 var(--mono); color: var(--text-2); }

@@ -96,6 +96,7 @@ export function SuggestionsPanel({ hidden }: { hidden: boolean }) {
                 <div className="slist-head" aria-hidden="true">
                   <span>Side</span>
                   <span>Asset</span>
+                  <span>TF</span>
                   <span>Confidence</span>
                   <span className="r">R:R</span>
                   <span className="r">Age</span>
@@ -109,6 +110,7 @@ export function SuggestionsPanel({ hidden }: { hidden: boolean }) {
                       <button key={s.id} type="button" className={`srow ${on ? 'on' : ''}`} aria-current={on ? 'true' : undefined} onClick={() => select(k)}>
                         <span className={`dir ${s.suggestion.direction.toLowerCase()}`}>{s.suggestion.direction}</span>
                         <span className="a">{ASSET_META[s.suggestion.asset].label}</span>
+                        <span className="tf" title="The bars it lives on: expiry and outcome count bars of this timeframe">{(s.timeframe ?? '1d').toUpperCase()}</span>
                         <span className="confbar" title={`Confidence ${conf}: the estimated chance this trade ends with a win`}>
                           <span className="track">
                             <span className="fill" style={{ width: `${s.suggestion.confidence * 100}%` }} />

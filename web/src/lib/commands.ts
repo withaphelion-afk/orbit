@@ -1,7 +1,7 @@
 import type { Asset } from '../api/types'
 import { ASSETS, ASSET_META } from '../config'
 
-export type View = 'HELP' | 'MON' | 'GP' | 'SUGG' | 'JRNL' | 'DRIFT' | 'ASTRO' | 'SYS'
+export type View = 'HELP' | 'MON' | 'GP' | 'SUGG' | 'JRNL' | 'DRIFT' | 'ASTRO' | 'SYS' | 'ALRT'
 
 /** Terminal functions, in F-key order. `label` is the name in the navigation bar. */
 export const FUNCTIONS: { code: View; key: string; label: string; desc: string }[] = [
@@ -13,6 +13,7 @@ export const FUNCTIONS: { code: View; key: string; label: string; desc: string }
   { code: 'DRIFT', key: 'F6', label: 'Drift', desc: 'Backtest, feedback loop, and live vs backtest drift' },
   { code: 'ASTRO', key: 'F7', label: 'Astro', desc: 'Vedic sky, events, playbook and model (research)' },
   { code: 'SYS', key: 'F8', label: 'System', desc: 'Runner, feeds, alerts and config' },
+  { code: 'ALRT', key: 'F9', label: 'Alerts', desc: 'Divergence alerts on 1H, 4H, 1D and 1W, with ✓/✗ to teach the model' },
 ]
 
 const VIEW_CODES = new Set<string>(FUNCTIONS.map((f) => f.code))

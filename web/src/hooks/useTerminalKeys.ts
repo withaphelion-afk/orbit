@@ -16,7 +16,7 @@ export function useTerminalKeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = useTerminal.getState()
-      const fk = /^F([1-8])$/.exec(e.key)
+      const fk = /^F([1-9])$/.exec(e.key)
       if (fk) {
         e.preventDefault()
         t.setView(FUNCTIONS[Number(fk[1]) - 1].code)
