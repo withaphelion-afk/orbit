@@ -40,7 +40,7 @@ There is no server. GitHub Actions jobs do all the work and publish their result
 
 | Where | What | When |
 | --- | --- | --- |
-| GitHub Actions `runner` | One runner cycle: new bars, features, suggestions created/expired/resolved; then publishes | Hourly |
+| GitHub Actions `runner` | One runner cycle: new bars, features, suggestions created/expired/resolved; then publishes | Hourly, started by a cron-job.org job (a POST to the workflow's dispatches endpoint with a token that has Actions: write); GitHub's own schedule skipped most runs |
 | GitHub Actions `analysis` | Playbook, backtest, feedback loop and Vedic model (placebo check on Sundays); then publishes | Daily 00:30 UTC, and from RUN ANALYSIS |
 | GitHub Actions `decide` | Logs your Take / Skip / Modify in the journal; then publishes | When you click it |
 | Private repo `orbit-data` | `data`: prices, silver cache, kernel, journal. `outputs`: computed results. `site`: every API answer as a JSON file, for the web terminal | Written by every job |

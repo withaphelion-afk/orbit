@@ -3,9 +3,9 @@ name: runner
 # Orbit's 24/7 runner, as one cycle an hour on GitHub's servers: fetch new bars,
 # recompute features, create/expire/resolve suggestions, then share the data
 # (private data repo) and the results (its outputs branch) for the web server.
+# Started from outside by cron-job.org (a POST to this workflow's dispatches endpoint), because GitHub's own
+# schedule skipped or delayed most runs. Also startable by hand from the Actions tab.
 on:
-  schedule:
-    - cron: "17 * * * *"  # hourly, off the top of the hour when GitHub's queue is busiest
   workflow_dispatch:
 
 # The runner and the analysis share one set of data: never run two at once.
