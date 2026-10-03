@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { STATIC } from '../api'
 import { useSystem } from '../api/hooks'
 import type { Asset } from '../api/types'
 import { ASSET_META } from '../config'
@@ -102,9 +103,9 @@ export function CommandBar() {
   const now = useNow(500)
   const lastTickAt = useTerminal((s) => s.lastTickAt)
   const connected = useTerminal((s) => s.feedConnected)
-  const { data: sys, isError: apiDown } = useSystem()
+  const { data: sys, isError: apiDown, error: apiError } = useSystem()
   const age = lastTickAt ? Math.round((now - lastTickAt) / 1000) : null
-  const runner = apiDown ? 'API DOWN' : sys ? sys.runner.state.replace('_', ' ') : '…'
+  const runner = apiDown ? (STATIC ? 'NO DATA' : 'API DOWN') : sys ? sys.runner.state.replace('_', ' ') : '…'
   const d = new Date(now)
 
   return (
@@ -129,8 +130,11 @@ export function CommandBar() {
           Auto-exec <Pill tone="off">{sys?.auto_execution ? 'ON' : 'OFF'}</Pill>
         </span>
         {apiDown && (
-          <Pill tone="drift" title="The Orbit API isn't answering. Start it with: uv run python -m orbit.api">
-            API OFFLINE
+          <Pill
+            tone="drift"
+            title={STATIC ? `Can't read Orbit's data: ${apiError instanceof Error ? apiError.message : 'no answer from GitHub'}` : "The Orbit API isn't answering. Start it with: python scripts/start_orbit.py"}
+          >
+            {STATIC ? 'NOT CONNECTED' : 'API OFFLINE'}
           </Pill>
         )}
         <span className="chip clock">
