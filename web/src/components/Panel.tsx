@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 
 interface Props {
   code: string
-  title: string
+  /** Leave out (with no description or tools) for a bare panel: just the body, e.g. a full-bleed chart. */
+  title?: string
   /** One plain sentence under the title saying what this screen is for. */
   description?: ReactNode
   /** Controls for this panel (tabs, filters, chart options), shown as a toolbar under the title. */
@@ -16,10 +17,12 @@ interface Props {
 export function Panel({ code, title, description, tools, hidden, className = '', children }: Props) {
   return (
     <section className={`panel p-${code} ${className}`} hidden={hidden}>
-      <header className={`ph ${description ? 'has-desc' : ''}`}>
-        <h2 className="ptitle">{title}</h2>
-        {description && <p className="pdesc">{description}</p>}
-      </header>
+      {title && (
+        <header className={`ph ${description ? 'has-desc' : ''}`}>
+          <h2 className="ptitle">{title}</h2>
+          {description && <p className="pdesc">{description}</p>}
+        </header>
+      )}
       {tools && <div className="ptools">{tools}</div>}
       <div className="pb">{children}</div>
     </section>

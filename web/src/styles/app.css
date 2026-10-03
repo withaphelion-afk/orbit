@@ -46,11 +46,11 @@ button:disabled { cursor: default; opacity: 0.6; }
 
 /* ============ top bar ============ */
 .topbar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 10px 16px;
   min-height: 56px; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
 }
 .brand { display: flex; align-items: center; gap: 9px; font: 700 17px/1 var(--ui); letter-spacing: 0.01em; color: #fff; }
-.search { position: relative; flex: 0 1 380px; min-width: 200px; }
+.search { position: relative; flex: 0 1 380px; min-width: 160px; }
 .search input {
   width: 100%; height: 38px; padding: 0 38px 0 36px; border: 1px solid var(--line-2); border-radius: 10px; outline: 0;
   background: var(--panel-2); font: 500 13px/1 var(--ui); color: #fff;
@@ -73,7 +73,11 @@ button:disabled { cursor: default; opacity: 0.6; }
 .search-list i { font-style: normal; font: 500 12px/1 var(--mono); color: var(--text-3); }
 .search-list em { font-style: normal; font: 700 10px/1 var(--ui); letter-spacing: 0.1em; color: var(--up); }
 .search-none { padding: 10px; color: var(--text-2); }
-.status { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* One line, always: the least important chips go first as space runs out, then the rest scroll rather than wrap. */
+.status { margin-left: auto; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.status::-webkit-scrollbar { display: none; }
+.status > * { flex: none; }
+@media (max-width: 1280px) { .status .opt { display: none; } }
 .chip { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); font: 500 12px/1 var(--ui); color: var(--text-2); }
 .chip b { font: 600 12px/1 var(--mono); color: #fff; }
 .chip b.down { color: var(--down); }
@@ -380,7 +384,9 @@ kbd.k { font: 600 11px/1 var(--mono); color: #fff; }
   html, body, #root { height: auto; }
   body { overflow: auto; }
   .term { height: auto; padding: 10px 10px 84px; }
+  .topbar { flex-wrap: wrap; }
   .search { flex: 1 1 100%; order: 3; }
+  .status { flex: 1 1 0; }
   .dock button { height: 40px; padding: 0 13px; font-size: 14px; }
   .main.mon { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'gp' 'watch'; }
   .main .panel { min-height: 420px; }
@@ -472,3 +478,32 @@ kbd.k { font: 600 11px/1 var(--mono); color: #fff; }
 .intraday { display: grid; gap: 6px; border: 1px solid var(--line-2); padding: 8px; background: var(--panel-2); }
 .intraday-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .intraday-chart { position: relative; height: 280px; }
+
+/* ============ chart: controls float over the chart (no header row) ============ */
+.p-GP .pb { overflow: hidden; }
+.gp-float { position: absolute; z-index: 5; top: 8px; right: 70px; display: flex; gap: 6px; padding: 4px; border: 1px solid var(--line-2); border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(6px); }
+.gp-float .seg button { height: 26px; padding: 0 9px; font-size: 11px; }
+/* On Orbit's own chart: top-left of the chart itself, clear of the price scale and the divergence list. */
+.gp-float.orbit { left: 10px; right: auto; }
+/* TradingView fills the panel and keeps its own toolbar on top: on phones the controls sit at its foot instead. */
+@media (max-width: 860px) { .gp-float:not(.orbit) { right: 8px; top: auto; bottom: 8px; } }
+
+/* ============ phones ============ */
+@media (max-width: 600px) {
+  .term { padding: 8px 8px 84px; gap: 8px; }
+  .topbar { padding: 8px 10px; gap: 8px; }
+  .brand { font-size: 15px; }
+  .chip { height: 28px; padding: 0 8px; font-size: 11px; }
+  .chip.clock { display: none; }
+  .ph { padding: 10px 12px; }
+  .pdesc { font-size: 12px; }
+  .ptools { padding: 8px 12px; overflow-x: auto; flex-wrap: nowrap; }
+  .ptools > * { flex: none; }
+  .tbl-wrap { overflow-x: auto; }
+  .dock { left: 8px; right: 8px; transform: none; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock button { flex: none; }
+  .main .panel { min-height: 360px; }
+  .p-GP { min-height: 70vh; }
+}
