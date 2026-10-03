@@ -1,12 +1,11 @@
 name: deploy space
 
-# Continuous deployment: once CI passes on main, put that commit on the Hugging
-# Face Space (web terminal + API), and Hugging Face rebuilds it. The first run
-# also creates the Space (private, Docker). Every run sets the Space's secrets
-# and variables from this repo's, so they are only ever entered here:
-#   secrets   HF_TOKEN (Hugging Face, write), ORBIT_DATA_TOKEN, ORBIT_DISPATCH_TOKEN
-#   variables ORBIT_DATA_REPO, HF_SPACE (optional, default <hf-user>/orbit)
-# Does nothing until HF_TOKEN is set. Run it by hand to redeploy the current main.
+# Continuous deployment of the web terminal: once CI passes on main, build the
+# static terminal (VITE_ORBIT_STATIC=1) and publish it to the Hugging Face Space
+# (free, static, private; created on first use). The terminal's data is published
+# separately by the runner, analysis and decide jobs. Needs the HF_TOKEN secret
+# (Hugging Face, write); HF_SPACE is optional (default <hf-user>/orbit). Does
+# nothing until HF_TOKEN is set. Run it by hand to redeploy the current main.
 on:
   workflow_run:
     workflows: [ci]
@@ -28,18 +27,26 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the static terminal
+        working-directory: web
+        env:
+          VITE_ORBIT_STATIC: "1"
+          VITE_ORBIT_GITHUB_REPO: ${{ github.repository }}
+        run: npm ci --no-audit --no-fund && npm run build
       - uses: astral-sh/setup-uv@v6
-      - name: Create or update the Space
+      - name: Publish it
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: ${{ vars.HF_SPACE }}
-          ORBIT_DATA_TOKEN: ${{ secrets.ORBIT_DATA_TOKEN }}
-          ORBIT_DISPATCH_TOKEN: ${{ secrets.ORBIT_DISPATCH_TOKEN }}
-          ORBIT_DATA_REPO: ${{ vars.ORBIT_DATA_REPO }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: uv run --no-project --with huggingface_hub python deploy/hf-space/deploy.py
+        run: uv run --no-project --with huggingface_hub python deploy/hf-space/publish.py --web web/dist

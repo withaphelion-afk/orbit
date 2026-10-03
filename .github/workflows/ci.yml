@@ -26,26 +26,6 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run pytest -q
 
-  space-image:
-    # The Hugging Face Space's image (deploy/hf-space), built from this commit.
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Build
-        env:
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          cp -r deploy/hf-space "$RUNNER_TEMP/space"
-          echo "$REPO" > "$RUNNER_TEMP/space/ORBIT_REPO"
-          echo "$SHA" > "$RUNNER_TEMP/space/ORBIT_COMMIT"
-          docker build -t orbit-space "$RUNNER_TEMP/space"
-      - name: The app loads inside it
-        run: docker run --rm orbit-space uv run --frozen --no-dev python -c "import orbit.cloud, orbit.api.app; print('ok')"
-
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
