@@ -15,6 +15,7 @@ const JournalPanel = lazy(() => import('./panels/JournalPanel').then((m) => ({ d
 const DriftPanel = lazy(() => import('./panels/DriftPanel').then((m) => ({ default: m.DriftPanel })))
 const AstroPanel = lazy(() => import('./panels/AstroPanel').then((m) => ({ default: m.AstroPanel })))
 const SystemPanel = lazy(() => import('./panels/SystemPanel').then((m) => ({ default: m.SystemPanel })))
+const AlertsPanel = lazy(() => import('./panels/AlertsPanel').then((m) => ({ default: m.AlertsPanel })))
 const HelpPanel = lazy(() => import('./panels/HelpPanel').then((m) => ({ default: m.HelpPanel })))
 
 /**
@@ -42,6 +43,7 @@ export function App() {
           {opened.has('ASTRO') && <AstroPanel hidden={view !== 'ASTRO'} />}
           {opened.has('SYS') && <SystemPanel hidden={view !== 'SYS'} />}
           {opened.has('HELP') && <HelpPanel hidden={view !== 'HELP'} />}
+          {opened.has('ALRT') && <AlertsPanel hidden={view !== 'ALRT'} />}
         </Suspense>
       </main>
       <FunctionBar />

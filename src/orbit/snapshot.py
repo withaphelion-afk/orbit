@@ -13,10 +13,13 @@ static terminal shows exactly what the server would. Layout, mirrored by
 web/src/api/static.ts:
 
     quotes.json, regime.json, sky.json, system.json, suggestions.json, journal.json,
-    drift.json, backtest.json, calibration.json, playbook.json, snapshot.json
+    drift.json, drift-4h.json, alerts.json, divergence-model.json, backtest.json, calibration.json, playbook.json, snapshot.json
     transits.json            the default window (90 days back to 180 ahead)
     transits-all.json        every event except the Moon's, for the chart's full history
-    candles/{ASSET}.json, signals/{ASSET}.json, playbook/{ASSET}.json, model/{ASSET}.json
+    projections.json         upcoming projections, the default view (60 days, weak and above)
+    projections-all.json     180 days ahead, "none" rows included
+    projections-track.json   the forward track record's summary
+    candles/{ASSET}.json, signals/{ASSET}.json, divergences/{ASSET}.json, bars/{ASSET}_{TF}.json, playbook/{ASSET}.json, model/{ASSET}.json
     patterns/{ASSET}/{hex of the pattern id}.json
     hourly/{ASSET}/{YEAR}.json   hourly bars as [time, open, high, low, close, volume] rows
     analysis/runs.json, analysis/current.json, analysis/schedule.json
@@ -91,11 +94,17 @@ def build(out: Path) -> int:
         ("suggestions.json", "/api/suggestions"),
         ("journal.json", "/api/journal"),
         ("drift.json", "/api/drift"),
+        ("drift-4h.json", "/api/drift?timeframe=4h"),
+        ("alerts.json", "/api/alerts"),
+        ("divergence-model.json", "/api/divergences/model"),
         ("backtest.json", "/api/backtest"),
         ("calibration.json", "/api/calibration"),
         ("playbook.json", "/api/playbook"),
         ("transits.json", "/api/transits"),
         ("transits-all.json", "/api/transits?from=1990-01-01&to=2100-01-01"),
+        ("projections.json", "/api/projections"),
+        ("projections-all.json", "/api/projections?days=180&include_none=true"),
+        ("projections-track.json", "/api/projections/track"),
         ("analysis/runs.json", "/api/analysis/runs?limit=40"),
         ("analysis/current.json", "/api/analysis/runs/current"),
         ("analysis/schedule.json", "/api/analysis/schedule"),
@@ -106,6 +115,9 @@ def build(out: Path) -> int:
         a = asset.value
         _render(client, out, f"candles/{a}.json", f"/api/candles/{a}")
         _render(client, out, f"signals/{a}.json", f"/api/signals/{a}")
+        _render(client, out, f"divergences/{a}.json", f"/api/divergences/{a}")
+        for tf in ("1h", "4h", "1d", "1w"):
+            _render(client, out, f"bars/{a}_{tf}.json", f"/api/bars/{a}?timeframe={tf}")
         _render(client, out, f"model/{a}.json", f"/api/model/{a}")
         playbook = store.playbook(asset)
         if _render(client, out, f"playbook/{a}.json", f"/api/playbook/{a}") and playbook:

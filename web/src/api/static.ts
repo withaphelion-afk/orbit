@@ -19,10 +19,13 @@ import type {
   Asset,
   Candle,
   DecisionRequest,
+  DivergenceLabelRequest,
   JournalRow,
+  ProjectionView,
   SuggestionView,
   SystemStatus,
   Tick,
+  Timeframe,
   TransitView,
 } from './types'
 
@@ -149,6 +152,13 @@ export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (.
     candles: (a: Asset) => get(`candles/${a}.json`),
     signals: (a: Asset) => get(`signals/${a}.json`),
     regime: () => get('regime.json'),
+    async projections(days: number, includeNone: boolean) {
+      // projections.json covers 60 days, weak and above; anything wider comes from projections-all.json (180 days, NONE included).
+      const all = await get<ProjectionView[]>(days <= 60 && !includeNone ? 'projections.json' : 'projections-all.json')
+      const until = Date.now() + days * 86_400_000
+      return all.filter((p) => Date.parse(p.window_start) <= until && (includeNone || p.label !== 'none'))
+    },
+    projectionTrack: () => get('projections-track.json'),
     sky: () => get('sky.json'),
     async transits(from?: string, to?: string) {
       if (!from && !to) return get<TransitView[]>('transits.json')
@@ -168,8 +178,25 @@ export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (.
       return (await get<SuggestionView[]>('suggestions.json')).filter((s) => !(s.id in done))
     },
     journal: () => get('journal.json'),
-    drift: () => get('drift.json'),
+    drift: (tf: Timeframe = '1d') => get(tf === '1d' ? 'drift.json' : `drift-${tf}.json`),
     backtest: () => get('backtest.json'),
+    bars: (a: Asset, tf: Timeframe) => get(`bars/${a}_${tf}.json`),
+    divergences: (a: Asset) => get(`divergences/${a}.json`),
+    divergenceModel: () => get('divergence-model.json'),
+    alerts: () => get('alerts.json'),
+    async labelDivergence(req: DivergenceLabelRequest): Promise<void> {
+      // Saved by the label workflow in the private data repo; the next runner cycle trains on it.
+      await dispatch('label.yml', {
+        asset: req.asset,
+        timeframe: req.timeframe,
+        t1: String(req.t1),
+        t2: String(req.t2),
+        direction: req.direction,
+        verdict: req.verdict,
+        source: req.source ?? 'detected',
+        note: req.note ?? '',
+      })
+    },
     calibration: () => get('calibration.json'),
     model: (a: Asset) => get(`model/${a}.json`),
     async system() {

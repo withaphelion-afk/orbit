@@ -1,37 +1,32 @@
-"""The strategy, backtest, journal, feedback loop and drift check."""
+"""The divergence system: detection, labels, the learning model, suggestions, backtest, journal and drift."""
 
-from dataclasses import replace
+import json
+import math
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from orbit.analysis.series import PriceSeries
 from orbit.backtest import drift, engine
-from orbit.core.types import Asset, Decision, Direction
-from orbit.features.arrays import wilder_rsi
+from orbit.core.types import Asset, Decision
 from orbit.journal import store
-from orbit.strategy import calibrate, live
-from orbit.strategy import rsi_divergence as strat
+from orbit.strategy import bars as bars_mod
+from orbit.strategy import divergence as det
+from orbit.strategy import divergence_model as dm
+from orbit.strategy import live
+
+CASES = json.loads((Path(__file__).parent / "fixtures" / "divergence_cases.json").read_text(encoding="utf-8"))
 
 
-def _walk(n=3000, seed=7) -> PriceSeries:
+def _walk(n=1500, seed=7, timeframe="1d") -> bars_mod.Bars:
     rng = np.random.default_rng(seed)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.025, n)))
     opens = np.concatenate([[close[0]], close[:-1]]) * (1 + rng.normal(0, 0.003, n))
     high = np.maximum(opens, close) * (1 + np.abs(rng.normal(0, 0.01, n)))
     low = np.minimum(opens, close) * (1 - np.abs(rng.normal(0, 0.01, n)))
-    dates = np.arange(np.datetime64("2012-01-01"), np.datetime64("2012-01-01") + np.timedelta64(n, "D"), dtype="datetime64[D]")
-    return PriceSeries(Asset.BTC, dates, opens, high, low, close)
-
-
-def _cut(s: PriceSeries, end: int) -> PriceSeries:
-    return PriceSeries(s.asset, s.dates[:end], s.open[:end], s.high[:end], s.low[:end], s.close[:end])
-
-
-def _bars(o, h, l, c) -> PriceSeries:
-    n = len(o)
-    dates = np.arange(np.datetime64("2020-01-01"), np.datetime64("2020-01-01") + np.timedelta64(n, "D"), dtype="datetime64[D]")
-    return PriceSeries(Asset.BTC, dates, *(np.array(x, dtype=float) for x in (o, h, l, c)))
+    step = bars_mod.SECONDS[timeframe]
+    t = (1_600_000_000 // step) * step + np.arange(n, dtype=np.int64) * step
+    return bars_mod.Bars(Asset.BTC, timeframe, t, opens, high, low, close, rng.uniform(1, 2, n))
 
 
 @pytest.fixture
@@ -39,217 +34,234 @@ def journal_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "JOURNAL_DIR", tmp_path)
     monkeypatch.setattr(store, "PATH", tmp_path / "suggestions.json")
     monkeypatch.setattr(store, "BACKUPS", tmp_path / "backups")
-    monkeypatch.setattr(calibrate, "PATH", tmp_path / "calibration.json")
+    monkeypatch.setattr(dm, "LABELS_PATH", tmp_path / "divergence_labels.json")
     return tmp_path
 
 
-# ---------------------------------------------------------------- RSI + signals
+# ---------------------------------------------------------------- detection (shared with web/src/lib/divergence.ts)
 
 
-def test_wilder_rsi_extremes_and_balance():
-    assert wilder_rsi(np.arange(1, 60, dtype=float))[-1] == 100.0
-    zigzag = 100 + np.tile([1.0, -1.0], 60)
-    assert abs(wilder_rsi(zigzag)[-1] - 50) < 3
-    assert np.isnan(wilder_rsi(zigzag)[:14]).all()
+@pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
+def test_detection_matches_the_shared_cases(case):
+    """The same file is checked by the TypeScript suite: both implementations must agree."""
+    r = det.rsi(case["close"])
+    assert all((x is None and math.isnan(y)) or (x is not None and y == pytest.approx(x, abs=1e-9)) for x, y in zip(case["rsi"], r))
+    lows, highs = det.swings(np.array(case["high"]), np.array(case["low"]))
+    assert (lows, highs) == (case["swings"]["lows"], case["swings"]["highs"])
+    got = [c.as_dict() for c in det.find(case["high"], case["low"], case["close"])]
+    assert len(got) == len(case["expected"])
+    for g, e in zip(got, case["expected"]):
+        assert {k: g[k] for k in ("kind", "direction", "i", "j", "confirm", "s1", "s2")} == {k: e[k] for k in ("kind", "direction", "i", "j", "confirm", "s1", "s2")}
+        assert g["r1"] == pytest.approx(e["r1"], abs=1e-9) and g["r2"] == pytest.approx(e["r2"], abs=1e-9)
 
 
-def test_divergences_follow_the_rule():
-    series = _walk()
-    sigs = strat.find_signals(series)
-    assert len(sigs) > 20
-    for s in sigs:
-        assert strat.MIN_BARS_BETWEEN <= s.bars_between <= strat.MAX_BARS_BETWEEN
-        assert s.signal_index == s.second_pivot + strat.PIVOT_RIGHT
-        if s.direction == Direction.LONG:
-            assert s.price_second < s.price_first and s.rsi_second > s.rsi_first and s.rsi_first < strat.BULL_RSI_ZONE
-            assert s.stop < series.low[s.second_pivot]
+def test_rsi_extremes():
+    assert det.rsi(np.arange(1, 60, dtype=float))[-1] == 100.0
+    assert abs(det.rsi(100 + np.tile([1.0, -1.0], 60))[-1] - 50) < 3
+    assert np.isnan(det.rsi(np.arange(10.0))).all()
+
+
+def test_every_candidate_follows_its_rule_and_uses_no_future_data():
+    b = _walk(800)
+    found = det.find(b.high, b.low, b.close)
+    assert {c.kind for c in found} == {"regular", "hidden"} and {c.direction for c in found} == {"LONG", "SHORT"}
+    for c in found:
+        assert det.MIN_GAP <= c.j - c.i <= det.MAX_GAP
+        if c.direction == "LONG":
+            assert (c.p2 < c.p1 and c.r2 > c.r1) if c.kind == "regular" else (c.p2 > c.p1 and c.r2 < c.r1)
         else:
-            assert s.price_second > s.price_first and s.rsi_second < s.rsi_first and s.rsi_first > strat.BEAR_RSI_ZONE
-            assert s.stop > series.high[s.second_pivot]
+            assert (c.p2 > c.p1 and c.r2 < c.r1) if c.kind == "regular" else (c.p2 < c.p1 and c.r2 > c.r1)
+    for c in [c for c in found if c.confirm is not None][::25]:
+        early = det.find(b.high[: c.confirm + 1], b.low[: c.confirm + 1], b.close[: c.confirm + 1])
+        same = [e for e in early if (e.i, e.j, e.direction) == (c.i, c.j, c.direction)]
+        assert same and same[0].confirm == c.confirm and (same[0].s1, same[0].s2) == (c.s1, c.s2)
 
 
-def test_signals_use_no_future_data():
-    """Every signal is found identically when the history ends on its confirmation bar."""
-    series = _walk()
-    for s in strat.find_signals(series)[::5]:
-        early = strat.find_signals(_cut(series, s.signal_index + 1))
-        match = [e for e in early if e.signal_index == s.signal_index and e.direction == s.direction]
-        assert match and match[0].first_pivot == s.first_pivot and match[0].stop == pytest.approx(s.stop)
+def test_a_forming_divergence_becomes_confirmed_or_disappears():
+    b = _walk(800, seed=11)
+    for end in range(300, 800, 37):
+        for c in [c for c in det.find(b.high[:end], b.low[:end], b.close[:end]) if c.forming]:
+            assert c.j >= end - det.RIGHT
+            later = det.find(b.high[: c.j + det.RIGHT + 1], b.low[: c.j + det.RIGHT + 1], b.close[: c.j + det.RIGHT + 1], include_forming=False)
+            assert all(x.confirm == c.j + det.RIGHT for x in later if (x.i, x.j, x.direction) == (c.i, c.j, c.direction))
 
 
-def test_levels_refuse_an_entry_past_the_stop():
-    s = strat.find_signals(_walk())[0]
-    past = s.stop * (0.99 if s.direction == Direction.LONG else 1.01)
-    assert strat.levels(s, past) is None
-    entry = s.stop * (1.05 if s.direction == Direction.LONG else 0.95)
-    stop, target = strat.levels(s, entry)
-    assert abs(target - entry) == pytest.approx(strat.TARGET_R * abs(entry - stop))
+# ---------------------------------------------------------------- bars
 
 
-# ---------------------------------------------------------------- trade walking
+def test_4h_and_1w_bars_aggregate_and_drop_the_open_bar():
+    b = _walk(48, timeframe="1h")
+    four = bars_mod.aggregate(b, "4h")
+    assert len(four) in (12, 13) and (four.time % (4 * 3600) == 0).all()
+    k = 1
+    s = np.flatnonzero((b.time >= four.time[k]) & (b.time < four.time[k] + 4 * 3600))
+    assert four.high[k] == b.high[s].max() and four.low[k] == b.low[s].min() and four.close[k] == b.close[s[-1]]
+    done = bars_mod.completed(four, now=float(four.time[-1] + 3600))
+    assert len(done) == len(four) - 1
+    week = bars_mod.aggregate(_walk(30, timeframe="1d"), "1w")
+    assert ((week.time - bars_mod.WEEK_ORIGIN) % (7 * 86400) == 0).all()
 
 
-def test_stop_wins_when_a_bar_touches_both_levels():
-    s = _bars([100, 100], [100, 111], [100, 94], [100, 100])
-    assert engine.walk(s, Direction.LONG, 1, 100, 95, 110, 0.0) == (1, 95, "stop")
+# ---------------------------------------------------------------- labels and the model
 
 
-def test_a_gap_through_the_stop_exits_at_the_open():
-    s = _bars([100, 100, 90], [100, 101, 91], [100, 99, 89], [100, 100, 90])
-    k, price, why = engine.walk(s, Direction.LONG, 1, 100, 95, 110, 0.0)
-    assert (k, price, why) == (2, 90, "stop")
+def test_labels_count_the_right_move_first():
+    b = _walk(10, timeframe="1d")
+    b.close[:] = 100.0
+    b.open[:] = 100.0
+    b.high[:] = 100.5
+    b.low[:] = 99.5
+    ctx = dm.Context(b, *(np.zeros(10),) * 3, move=0.05, regime=np.zeros(10))
+    c = det.Candidate("regular", "LONG", 0, 3, 5, 1, 1, 30, 35, 1, 1)
+    b.high[7] = 106.0
+    assert dm.label(c, ctx) == 1
+    b.low[6] = 94.0
+    assert dm.label(c, ctx) == 0  # the wrong way came first
+    assert dm.label(det.Candidate("regular", "LONG", 0, 3, None, 1, 1, 30, 35, 1, 1), ctx) is None
 
 
-def test_time_exit_and_still_open():
-    n = strat.MAX_BARS + 5
-    flat = [100.0] * n
-    s = _bars(flat, [101.0] * n, [99.0] * n, flat)
-    k, _, why = engine.walk(s, Direction.SHORT, 1, 100, 105, 90, 0.0)
-    assert why == "time" and k == strat.MAX_BARS
-    assert engine.walk(_cut(s, 10), Direction.SHORT, 1, 100, 105, 90, 0.0) is None
+def _rows(n_assets_rows=400, planted=True, seed=0):
+    rng = np.random.default_rng(seed)
+    b = _walk(50)
+    ctx = dm.Context(b, *(np.zeros(50),) * 3, move=0.05, regime=np.zeros(50))
+    rows = []
+    for k in range(n_assets_rows):
+        x = rng.normal(size=len(dm.FEATURES)).tolist()
+        p = 1 / (1 + math.exp(-(2 * x[0] - 1))) if planted else 0.25
+        y = int(rng.random() < p)
+        c = det.Candidate("regular", "LONG", 1, 8, 10, 1, 1, 30, 35, 1, 1)
+        rows.append(dm.Row(f"BTC|1d|{k}|{k + 1}|LONG", "BTC", "1d", 1_600_000_000 + k * 86400, x, y, None, c, ctx))
+    return rows
 
 
-def test_result_in_percent_and_r():
-    ret, r = engine.result(Direction.LONG, 100, 95, 110, 0.0)
-    assert ret == pytest.approx(10.0) and r == pytest.approx(2.0)
-    ret, r = engine.result(Direction.SHORT, 100, 105, 105, 0.001)
-    assert ret == pytest.approx(-5.2) and r == pytest.approx(-1.04)
+def test_the_model_is_trusted_only_when_it_beats_the_base_rate(tmp_path, monkeypatch):
+    monkeypatch.setattr(dm, "STRATEGY_DIR", tmp_path)
+    monkeypatch.setattr(dm, "MODEL_PATH", tmp_path / "m.json")
+    monkeypatch.setattr(dm, "RECENT_PATH", tmp_path / "r.json")
+    assert dm.train(_rows(1500, planted=True))["trusted"] is True
+    noise = dm.train(_rows(1500, planted=False, seed=1))
+    assert noise["trusted"] is False and noise["base_rate"] == pytest.approx(0.25, abs=0.05)
+    saved = json.loads((tmp_path / "m.json").read_text())
+    assert "oos_scores" not in saved and saved["thresholds"]["1d"] > 0
 
 
-def test_backtest_holds_one_trade_at_a_time_and_enters_next_open():
-    series = _walk()
-    trades = engine.run(Asset.BTC, series)
+def test_your_label_overrides_the_market_and_counts_more(journal_dir):
+    rows = _rows(10)
+    rows[0].user, rows[0].y = "real", 0
+    assert dm._target(rows[0]) == (1.0, float(dm.DIVERGENCE_USER_WEIGHT))
+    assert dm._target(rows[1]) == (float(rows[1].y), 1.0)
+    dm.add_label("BTC", "4h", 1, 2, "LONG", "real")
+    dm.add_label("BTC", "4h", 1, 2, "LONG", "not")  # a later label replaces the earlier one
+    assert [x["verdict"] for x in dm.load_labels()] == ["not"]
+    with pytest.raises(ValueError):
+        dm.add_label("BTC", "4h", 1, 2, "LONG", "maybe")
+
+
+# ---------------------------------------------------------------- trades
+
+
+def test_stop_wins_when_a_bar_touches_both_levels_and_gaps_exit_at_the_open():
+    b = _walk(5)
+    b.open[:] = [100, 100, 90, 100, 100]
+    b.high[:] = [100, 111, 91, 100, 100]
+    b.low[:] = [100, 94, 89, 100, 100]
+    assert engine.walk(b, "LONG", 1, 100, 95, 110, 30) == (1, 95, "stop")
+    assert engine.walk(b, "LONG", 2, 100, 95, 110, 30)[2] == "stop"
+
+
+def test_levels_use_the_swing_extreme_and_2r():
+    assert engine.levels("LONG", 100, 95) == (95, 110)
+    assert engine.levels("SHORT", 100, 104) == (104, 92)
+    assert engine.levels("LONG", 100, 101) is None
+
+
+def test_backtest_enters_next_open_one_trade_at_a_time():
+    b = _walk(1500)
+    found = [c for c in det.find(b.high, b.low, b.close) if c.confirm is not None]
+    cands = [{"direction": c.direction, "kind": c.kind, "confirmed_at": int(b.time[c.confirm]), "p2": c.p2, "oos_score": 0.9} for c in found]
+    trades = engine.run(Asset.BTC, "1d", b, cands, threshold=0.5)
     assert len(trades) > 10
-    for a, b in zip(trades, trades[1:]):
-        assert b.entry_date > a.exit_date
-    idx = {str(d): i for i, d in enumerate(series.dates)}
-    for t in trades:
-        e = idx[t.entry_date]
-        assert e == idx[t.signal_date] + 1 and t.entry == series.open[e]
-    summary = engine.summarise(trades)
-    assert summary["trades"] == sum(1 for t in trades if t.r_multiple is not None)
-    assert sum(summary["exit_reasons"].values()) == summary["trades"]
+    for a, c in zip(trades, trades[1:]):
+        assert c.entry_date > a.exit_date
+    assert engine.run(Asset.BTC, "1d", b, cands, threshold=0.95) == []  # below the threshold: never traded
 
 
-# ---------------------------------------------------------------- live suggestions + journal
+# ---------------------------------------------------------------- live suggestions, journal, drift
 
 
-def _signal_at_end(series):
-    s = next(s for s in strat.find_signals(series) if s.signal_index > 500)
-    return s, _cut(series, s.signal_index + 1)
+def _recent_with_alert(b, tf="1d"):
+    found = [c for c in det.find(b.high, b.low, b.close) if c.confirm == len(b) - 1]
+    assert found, "need a divergence confirming on the last bar"
+    c = found[0]
+    return {"trusted": False, "candidates": {"BTC": {tf: [{"id": "x", "kind": c.kind, "direction": c.direction, "alert": True, "score": 0.42,
+                                                           "confirmed_at": int(b.time[c.confirm]), "p1": c.p1, "p2": c.p2, "r1": c.r1, "r2": c.r2}]}}}, c
 
 
-def test_refresh_suggests_expires_and_resolves(journal_dir):
-    series = _walk()
-    s, upto = _signal_at_end(series)
-    assert live.refresh({Asset.BTC: upto})["new"] == 1
-    assert live.refresh({Asset.BTC: upto})["new"] == 0  # same signal, not duplicated
-    rec = store.load()[0]
-    assert rec.status == "pending" and rec.suggestion.direction == s.direction
-    assert rec.suggestion.entry_price == upto.close[-1]
-    assert rec.suggestion.confidence == pytest.approx(0.4)  # nothing trained yet
-    later = _cut(series, s.signal_index + 1 + strat.MAX_BARS + 2)
-    counts = live.refresh({Asset.BTC: later})
-    rec = store.load()[0]
-    assert counts["expired"] == 1 and rec.status == "expired"
-    assert rec.paper is not None and rec.paper.entry == later.open[s.signal_index + 1]
+def _bars_ending_on_a_divergence(tf="1d"):
+    b = _walk(1500, timeframe=tf)
+    c = next(c for c in det.find(b.high, b.low, b.close) if c.confirm and c.confirm > 600 and engine.levels(c.direction, b.close[c.confirm], c.p2))
+    return b, _cut(b, c.confirm + 1)  # the full history, and the same history ending on the confirmation bar
+
+
+def _cut(b, end):
+    return bars_mod.Bars(b.asset, b.timeframe, b.time[:end], b.open[:end], b.high[:end], b.low[:end], b.close[:end], b.volume[:end])
+
+
+def test_refresh_suggests_on_4h_and_1d_expires_in_its_own_bars_and_resolves(journal_dir):
+    for tf in ("4h", "1d"):
+        full, upto = _bars_ending_on_a_divergence(tf)
+        recent, c = _recent_with_alert(upto, tf)
+        assert live.refresh(recent, {(Asset.BTC, tf): upto})["new"] == 1
+        rec = [r for r in store.load() if r.timeframe == tf][0]
+        assert rec.status == "pending" and rec.suggestion.entry_price == upto.close[-1] and rec.suggestion.stop_loss == c.p2
+        assert rec.suggestion.take_profit == pytest.approx(engine.levels(c.direction, upto.close[-1], c.p2)[1])
+        later = _cut(full, len(upto) + 40)
+        counts = live.refresh({"candidates": {}}, {(Asset.BTC, tf): later})
+        rec = [r for r in store.load() if r.timeframe == tf][0]
+        assert counts["expired"] == 1 and rec.status == "expired" and rec.paper is not None
 
 
 def test_decisions_are_logged_once(journal_dir):
-    series = _walk()
-    _, upto = _signal_at_end(series)
-    live.refresh({Asset.BTC: upto})
+    full, upto = _bars_ending_on_a_divergence()
+    recent, _ = _recent_with_alert(upto)
+    live.refresh(recent, {(Asset.BTC, "1d"): upto})
     rec = store.load()[0]
-    e = rec.suggestion.entry_price
-    lv = (e, e * 0.9, e * 1.2) if rec.suggestion.direction == Direction.LONG else (e, e * 1.1, e * 0.8)
-    out = live.decide(rec.id, Decision.MODIFIED, "tighter", *lv)
-    assert (out.acted_entry, out.acted_stop, out.acted_target) == lv
+    live.decide(rec.id, Decision.SKIPPED, "not convinced", None, None, None)
     with pytest.raises(ValueError):
         live.decide(rec.id, Decision.TAKEN, "", None, None, None)
     with pytest.raises(KeyError):
         live.decide("nope", Decision.TAKEN, "", None, None, None)
-    entry = store.load()[0].journal_entry()
-    assert entry.decision == Decision.MODIFIED and entry.suggestion.stop_loss == lv[1] and entry.outcome_pnl is None
-    assert list((journal_dir / "backups").iterdir())
 
 
-def test_decision_endpoint_and_journal(journal_dir):
-    from fastapi.testclient import TestClient
-
-    from orbit.api.app import create_app
-
-    series = _walk()
-    _, upto = _signal_at_end(series)
-    live.refresh({Asset.BTC: upto})
-    sid = store.load()[0].id
-    c = TestClient(create_app(live=False))
-    assert [v["id"] for v in c.get("/api/suggestions").json()] == [sid]
-    assert c.post(f"/api/suggestions/{sid}/decision", json={"decision": "MODIFIED", "notes": ""}).status_code == 422
-    r = c.post(f"/api/suggestions/{sid}/decision", json={"decision": "SKIPPED", "notes": "not convinced"})
-    assert r.status_code == 200 and r.json()["entry"]["decision"] == "SKIPPED"
-    assert c.post(f"/api/suggestions/{sid}/decision", json={"decision": "TAKEN", "notes": ""}).status_code == 409
-    assert c.get("/api/suggestions").json() == []
-    assert [row["entry"]["notes"] for row in c.get("/api/journal").json()] == ["not convinced"]
-
-
-# ---------------------------------------------------------------- feedback loop + drift
-
-
-def _fake_trades(n, seed, informative):
-    rng = np.random.default_rng(seed)
-    base = engine.run(Asset.BTC, _walk())[0]
-    out = []
-    for k in range(n):
-        diff = float(rng.uniform(1, 20))
-        win = rng.random() < (0.15 + 0.035 * diff if informative else 0.4)
-        out.append(replace(base, signal_date=f"{2012 + k * 12 // n}-06-01", rsi_difference=diff, rsi_second=float(rng.uniform(20, 80)),
-                           price_change=float(rng.normal(0, 0.05)), bars_between=int(rng.integers(5, 60)), atr_pct=float(rng.uniform(0.01, 0.06)),
-                           volatility_pct=float(rng.random()), trend_aligned=float(rng.choice([-1, 0, 1])), r_multiple=1.0 if win else -1.0))
-    return out
-
-
-def test_confidence_is_the_plain_win_rate_without_skill(journal_dir, monkeypatch):
-    monkeypatch.setattr(calibrate, "load_trades", lambda: _fake_trades(600, 1, informative=False))
-    rep = calibrate.train()
-    assert rep["skill"] is False
-    feats = {"rsi_first": 30, "rsi_second": 35, "rsi_difference": 19, "price_change": -0.05, "bars_between": 20,
-             "atr_pct": 0.03, "volatility_pct": 0.5, "trend_aligned": 1}
-    assert calibrate.confidence(feats, "LONG") == pytest.approx(rep["base_win_rate"])
-
-
-def test_confidence_follows_the_model_when_it_has_skill(journal_dir, monkeypatch):
-    monkeypatch.setattr(calibrate, "load_trades", lambda: _fake_trades(1500, 2, informative=True))
-    rep = calibrate.train()
-    assert rep["skill"] is True and rep["weights"][0]["feature"] == "rsi_difference"
-    feats = {"rsi_first": 30, "rsi_second": 35, "rsi_difference": 19, "price_change": -0.05, "bars_between": 20,
-             "atr_pct": 0.03, "volatility_pct": 0.5, "trend_aligned": 1}
-    strong = calibrate.confidence(feats, "LONG")
-    weak = calibrate.confidence({**feats, "rsi_difference": 2}, "LONG")
-    assert strong > rep["base_win_rate"] > weak
-
-
-def test_drift_flags_a_live_win_rate_far_below_the_backtest(journal_dir, monkeypatch):
-    monkeypatch.setattr(drift, "load_backtest", lambda: {"pooled": {"trades": 200, "win_rate": 0.5, "avg_r": 0.2, "std_r": 1.2, "max_drawdown_r": -8}})
+def test_drift_is_per_timeframe(journal_dir, monkeypatch):
+    monkeypatch.setattr(drift, "load_backtest", lambda: {"timeframes": {"1d": {"pooled": {"trades": 200, "win_rate": 0.5, "avg_r": 0.2, "std_r": 1.2,
+                                                                                          "max_drawdown_r": -8}}}})
     base = store.SuggestionRecord.model_validate_json(_one_record_json())
     losers = [base.model_copy(update={"id": f"x{k}", "paper": base.paper.model_copy(update={"r_multiple": -1.0 if k < 18 else 1.0})}) for k in range(20)]
-    store.save(losers)
-    rep = drift.report()
-    assert rep["live_trades"] == 20 and rep["live_win_rate"] == pytest.approx(0.1)
-    assert rep["z_score"] < -2 and rep["status"] == "DRIFT"
-    assert rep["curve"][-1]["live"] == pytest.approx(-16.0)
-    store.save(losers[:5])
-    assert drift.report()["status"] == "OK"  # too few trades to judge
+    store.save(losers + [base.model_copy(update={"id": "h", "timeframe": "4h"})])
+    rep = drift.report("1d")
+    assert rep["live_trades"] == 20 and rep["status"] == "DRIFT" and rep["timeframe"] == "1d"
+    assert drift.report("4h") is None  # no 4H backtest: nothing to compare against
 
 
 def _one_record_json() -> str:
-    return """{"id": "BTC-2026-01-01-LONG", "created_at": "2026-01-01T00:05:00Z", "signal_date": "2026-01-01", "risk_reward": 2.0,
+    return """{"id": "BTC-1d-2026-01-01T00:00-LONG", "created_at": "2026-01-01T00:05:00Z", "signal_date": "2026-01-01T00:00:00+00:00", "risk_reward": 2.0,
       "suggestion": {"asset": "BTC", "timestamp": "2026-01-01T00:00:00Z", "direction": "LONG", "confidence": 0.4, "entry_price": 100,
                      "stop_loss": 95, "take_profit": 110, "signals": []},
       "features": {}, "status": "expired",
-      "paper": {"entry_date": "2026-01-02", "entry": 100, "exit_date": "2026-01-10", "exit_price": 95, "reason": "stop", "return_pct": -5.2, "r_multiple": -1.0}}"""
+      "paper": {"entry_date": "2026-01-02T00:00:00+00:00", "entry": 100, "exit_date": "2026-01-10T00:00:00+00:00", "exit_price": 95, "reason": "stop",
+                "return_pct": -5.2, "r_multiple": -1.0}}"""
 
 
-# ---------------------------------------------------------------- the Vedic model's machinery
+def test_old_records_without_a_timeframe_still_load(journal_dir):
+    raw = json.loads(_one_record_json())
+    raw.pop("timeframe", None)
+    raw["signal_date"] = "2026-01-01"
+    rec = store.SuggestionRecord.model_validate(raw)
+    assert rec.timeframe == "1d"
+
+
+# ---------------------------------------------------------------- the Vedic model's machinery (analysis/model.py)
 
 
 def test_auc_and_logistic_fit():
@@ -263,25 +275,3 @@ def test_auc_and_logistic_fit():
     yy = (rng.random(4000) < 1 / (1 + np.exp(-(0.5 + 2 * x)))).astype(float)
     w = fit_logistic(np.column_stack([np.ones(4000), x]), yy, 1.0)
     assert w[0] == pytest.approx(0.5, abs=0.15) and w[1] == pytest.approx(2.0, abs=0.2)
-
-
-def test_walk_forward_credits_a_planted_feature_and_not_noise():
-    from orbit.analysis.model import walk_forward
-    from orbit.analysis.outcomes import BIG_UP, label_outcomes
-
-    series = _walk(4000, seed=3)
-    codes = label_outcomes(series, 5).codes
-    rng = np.random.default_rng(1)
-    tech = rng.normal(size=(len(series), 3))
-    y = (codes == BIG_UP).astype(float)
-    planted = np.column_stack([y, rng.random(len(series)) < 0.3]).astype(float)
-    noise = (rng.random((len(series), 2)) < 0.3).astype(float)
-
-    def skill(vedic):
-        idx, p, clim = walk_forward(series, tech, vedic, codes, BIG_UP, 5)
-        from orbit.analysis.model import log_loss
-
-        return 1 - log_loss(y[idx], p) / log_loss(y[idx], clim)
-
-    assert skill(planted) > 0.5
-    assert skill(noise) < 0.01

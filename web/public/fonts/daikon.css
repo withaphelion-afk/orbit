@@ -1,0 +1,12 @@
+/*
+ * Daikon (Pepper Type) is Orbit's UI font. It's a paid font, so its files aren't
+ * in the repo. To use it: buy a web licence, put the WOFF2 files in this folder
+ * with these names, and remove the comment markers around the rules below.
+ * Until then the UI uses Manrope (the next font in --ui, styles/tokens.css).
+ */
+/*
+@font-face { font-family: 'Daikon'; src: url('Daikon-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Daikon'; src: url('Daikon-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Daikon'; src: url('Daikon-SemiBold.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Daikon'; src: url('Daikon-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+*/

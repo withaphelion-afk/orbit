@@ -80,11 +80,12 @@ library loads only in ORBIT chart mode.
 | Code | Key | What it shows | Data |
 |---|---|---|---|
 | MON | F2 | Chart and watchlist, plus the regime gate and next transit | quotes, regime, sky |
-| GP | F3 | **LIVE**: TradingView's chart (their data). **ORBIT**: the full stored history with every RSI divergence, regime flips and Vedic markers | candles, signals, transits |
+| GP | F3 | **LIVE**: TradingView's chart (their data) with its RSI(14) study. **ORBIT**: Orbit's live divergence chart at 1H/4H/1D/1W. Binance bars stream in real time (silver: Orbit's bars, hourly). It has an RSI pane with 70/30 bands, and every divergence the shared algorithm finds: solid once confirmed, dashed while forming, scored, with ✓/✗ and "mark one it missed". | Binance, bars, divergences, divergence model |
+| ALRT | F9 | Divergence alerts on every timeframe (runner + live chart), badge on the navigation, ✓/✗ to teach the model | alerts, divergence model |
 | SUGG | F4 | RSI divergence suggestions: levels, the signals behind each, confidence; take / skip / modify (J/K, T/S/M) | suggestions |
 | JRNL | F5 | Every decision and its outcome, expired suggestions, and what skipped ones would have returned | journal |
-| DRIFT | F6 | Three views:<br>**DRIFT**: live vs backtest win rate (z-score) and the cumulative-R curve against the backtest's expectation<br>**BACKTEST**: per-asset results over the full history, long vs short, exits, the equity curve, by year<br>**FEEDBACK**: what the feedback loop learned, its out-of-sample check, and whether it sets confidence yet | drift, backtest, calibration |
-| ASTRO | F7 | Five tabs, all Vedic (sidereal, Lahiri):<br>**SKY**: the 9 grahas now: rashi, degree, nakshatra and pada, vakri / asta / uchcha / neecha, next change<br>**EVENTS**: past and upcoming events (ingresses, stations, yuti, drishti, asta, yuddha, lunations, grahan, yogas), with exact times<br>**PLAYBOOK**: the RUN ANALYSIS button, per-asset patterns (daily and hourly labels), and every occurrence with exception context and move timing. Click an occurrence for its hourly chart around the exact moment.<br>**CHOP**: Vedic states vs sideways markets<br>**MODEL**: does the whole Vedic sky improve a price-only forecast? Walk-forward, against shifted controls | sky, transits, playbook, analysis runs, intraday, model |
+| DRIFT | F6 | Three views:<br>**DRIFT**: live vs backtest win rate (z-score) and the cumulative-R curve against the backtest's expectation<br>**BACKTEST**: per-asset results over the full history, long vs short, exits, the equity curve, by year<br>**FEEDBACK**: what the divergence model learned, its walk-forward check, and whether it's trusted yet. DRIFT and BACKTEST switch between 1D and 4H | drift, backtest, calibration |
+| ASTRO | F7 | Six tabs, all Vedic (sidereal, Lahiri):<br>**PROJECTIONS** (default): each upcoming event per asset, with what history says followed it. It shows the odds vs normal with their range, size, timing and reliability (N, q, label), and nothing below STRONG/MODERATE is shown as trusted. Each row opens its evidence, plus a forward track record.<br>**SKY**: the 9 grahas now: rashi, degree, nakshatra and pada, vakri / asta / uchcha / neecha, next change<br>**EVENTS**: past and upcoming events (ingresses, stations, yuti, drishti, asta, yuddha, lunations, grahan, yogas), with exact times<br>**PLAYBOOK**: the RUN ANALYSIS button, per-asset patterns (daily and hourly labels), and every occurrence with exception context and move timing. Click an occurrence for its hourly chart around the exact moment.<br>**CHOP**: Vedic states vs sideways markets<br>**MODEL**: does the whole Vedic sky improve a price-only forecast? Walk-forward, against shifted controls | sky, transits, playbook, analysis runs, intraday, model |
 | SYS | F8 | Runner heartbeat, the run button with run history and schedule, which layers are built, feed provenance, runner log, settings | system, analysis runs |
 | HELP | F1 | Commands and keys | — |
 
@@ -118,7 +119,13 @@ All shapes are in [`src/api/types.ts`](src/api/types.ts). They mirror
 | GET | `/api/suggestions` | `SuggestionView[]`: suggestions waiting for a decision, newest first |
 | POST | `/api/suggestions/{id}/decision` | Log `DecisionRequest` (`TAKEN` / `SKIPPED` / `MODIFIED` with levels) → `JournalRow`. `404` unknown, `409` already decided or expired, `422` MODIFIED without levels. Never places an order |
 | GET | `/api/journal` | `JournalRow[]`: decided and expired suggestions with outcomes and counterfactuals, newest first |
-| GET | `/api/drift` | `DriftReport`: live vs backtest; `404` before the first backtest |
+| GET | `/api/drift?timeframe=1d\|4h` | `DriftReport`: live vs backtest for one timeframe; `404` before the first backtest |
+| GET | `/api/bars/{asset}?timeframe=1h\|4h\|1d\|1w` | `BarRow[]`: the last 1,000 completed bars as `[time, open, high, low, close, volume]` |
+| GET | `/api/divergences/{asset}` | `DivergenceSet`: recent divergence candidates per timeframe, scored, with outcomes and your labels |
+| GET | `/api/divergences/model` | `DivergenceModel`: the weights the browser scores live divergences with, thresholds, trust |
+| GET | `/api/alerts` | `AlertItem[]`: confirmed divergences above their timeframe's threshold, newest first |
+| POST | `/api/divergences/label` | `DivergenceLabelRequest` (✓ real / ✗ not real, or a missed one): saved for the next retrain |
+| GET | `/api/projections`, `/api/projections/track` | `ProjectionView[]` (upcoming events with their evidence) and the forward track record |
 | GET | `/api/backtest`, `/api/backtest/{asset}` | `BacktestReport`: pooled and per-asset results; one asset's with every trade |
 | GET | `/api/calibration` | `CalibrationReport`: the feedback loop's weights, out-of-sample check, and whether it sets confidence |
 | GET | `/api/model/{asset}` | `ModelReport`: the Vedic model's walk-forward results, verdicts, controls and today's forecast |

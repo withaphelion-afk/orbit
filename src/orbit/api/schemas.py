@@ -20,6 +20,7 @@ from orbit.core.types import (
     Outcome,
     PatternHorizonStat,
     Planet,
+    Projection,
     SidewaysStateResult,
     SpeedClass,
     TimingHorizonStat,
@@ -187,6 +188,20 @@ class SuggestionView(BaseModel):
     created_at: datetime
     risk_reward: float
     suggestion: TradeSuggestion
+    timeframe: str = "1d"  # 4h or 1d: the bars it lives on (expiry and outcome count bars of this timeframe)
+
+
+class DivergenceLabelRequest(BaseModel):
+    """✓ real / ✗ not real on a divergence, identified by its two swings' bar times (epoch seconds)."""
+
+    asset: Asset
+    timeframe: Literal["1h", "4h", "1d", "1w"]
+    t1: int
+    t2: int
+    direction: Literal["LONG", "SHORT"]
+    verdict: Literal["real", "not"]
+    note: str = ""
+    source: Literal["detected", "manual"] = "detected"  # manual: one detection missed, marked by clicking its two swings
 
 
 class DecisionRequest(BaseModel):
@@ -204,6 +219,7 @@ class JournalRow(BaseModel):
     expired: bool = False  # no decision within SUGGESTION_EXPIRY_BARS (logged as SKIPPED)
     counterfactual_pnl: float | None  # what a skipped/expired suggestion would have returned
     exit_reason: str | None = None  # target / stop / time, once the outcome is known
+    timeframe: str = "1d"
 
 
 class EquityPoint(BaseModel):
@@ -242,3 +258,12 @@ class ScheduleView(BaseModel):
     runner_running: bool
     last_success_at: datetime | None
     last_success_trigger: str | None
+
+
+class ProjectionView(Projection):
+    """A projection plus the full stats of its headline horizon (n, every rate, p and q
+    values), so the evidence panel can show the calculation. The pattern's full
+    evidence, occurrences included, is /api/playbook/{asset}/patterns/{pattern_id}."""
+
+    horizon_stat: PatternHorizonStat
+

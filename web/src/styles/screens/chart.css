@@ -1,0 +1,61 @@
+/* ORBIT divergence chart: the chart, and the divergence list beside it */
+.dv { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: 100%; min-height: 0; }
+.dv-chart { position: relative; min-height: 420px; }
+.dv-chart .lw-host { position: absolute; inset: 0 0 26px 0; }
+.dv-chart .lw-host.marking { cursor: crosshair; outline: 1px dashed var(--accent); outline-offset: -2px; }
+.dv-legend { position: absolute; left: 10px; right: 10px; bottom: 4px; display: flex; flex-wrap: wrap; gap: 14px; font: 500 11px/1.4 var(--ui); color: var(--text-3); }
+.dv-list { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.dv-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 14px 11px 20px; border-bottom: 1px solid var(--line); }
+.dv-title { font: 600 10px/1 var(--ui); letter-spacing: 0.12em; color: var(--text-3); text-transform: uppercase; }
+.act.dv-mark { padding: 7px 11px; font-size: 11px; }
+.act.dv-mark.on { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
+.dv-rows { display: grid; gap: 2px; align-content: start; padding: 6px; overflow: auto; }
+.dv-row { display: grid; gap: 8px; padding: 12px 14px; border-radius: 10px; transition: background 0.12s; box-shadow: inset 3px 0 0 transparent; }
+.dv-row:hover { background: var(--panel-2); }
+.dv-row.long { box-shadow: inset 3px 0 0 var(--up); }
+.dv-row.short { box-shadow: inset 3px 0 0 var(--down); }
+.dv-row.forming { opacity: 0.8; }
+.dv-top { display: flex; align-items: center; gap: 8px; }
+.dv-dir { display: inline-flex; align-items: center; gap: 4px; font: 700 13px/1 var(--ui); }
+.dv-kind { font: 500 12px/1 var(--ui); color: var(--text-3); text-transform: capitalize; }
+.dv-score { margin-left: auto; font: 700 14px/1 var(--mono); color: var(--text); }
+.dv-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.dv-tags:empty { display: none; }
+.dv-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font: 400 12px/1.35 var(--ui); }
+.dv-facts dt { font: 600 10px/1.6 var(--ui); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+.dv-facts dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px; }
+.dv-teach { display: flex; gap: 6px; }
+.dv-teach .act { padding: 7px 11px; font-size: 11px; }
+.act.take.on { background: var(--up-wash); border-color: var(--up); }
+.act.skip.on { color: var(--text); border-color: var(--text-2); background: var(--panel-3); }
+.dv-teach .act:disabled { opacity: 0.5; cursor: wait; }
+.dv-legend .pill { padding: 3px 6px; font-size: 9px; }
+@media (max-width: 900px) {
+  .dv { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(420px, 1fr) auto; }
+  .dv-list { border-left: 0; border-top: 1px solid var(--line); max-height: 420px; }
+}
+
+/* ALERTS: the same rows as the chart's divergence list */
+.alerts-list { display: grid; gap: 2px; padding: 6px; }
+.alert-row { display: flex; align-items: center; gap: 12px; padding: 4px 8px 4px 0; border-radius: 10px; transition: background 0.12s; }
+.alert-row:hover { background: var(--panel-2); }
+.alert-row.unseen { box-shadow: inset 3px 0 0 var(--accent); }
+.alert-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 90px 170px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 11px 14px;
+  border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.alert-asset { display: inline-flex; align-items: baseline; gap: 8px; }
+.alert-asset b { font: 700 13px/1 var(--ui); letter-spacing: 0.06em; color: var(--text); }
+.alert-tf { font: 600 11px/1 var(--mono); color: var(--text-2); }
+.alert-facts { font: 400 12px/1.35 var(--mono); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-score { display: inline-flex; align-items: center; gap: 8px; }
+.alert-score .dv-score { margin-left: 0; }
+.alert-ago { font: 500 12px/1 var(--mono); color: var(--text-3); white-space: nowrap; }
+@media (max-width: 900px) {
+  .alert-row { flex-wrap: wrap; padding: 0 0 10px; }
+  .alert-main { grid-template-columns: 1fr auto; }
+  .alert-facts { grid-column: 1 / -1; white-space: normal; }
+  .alert-row .dv-teach { padding-left: 14px; }
+}
+.linkish { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.linkish:hover { text-decoration: underline; }
+.dv-outcome.worked { color: var(--up); }
+.dv-outcome.failed { color: var(--down); }

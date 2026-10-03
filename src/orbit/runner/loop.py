@@ -70,8 +70,10 @@ def run_once(logger: logging.Logger) -> None:
     fetch_all_prices()
     fetch_all_ephemeris()
     compute_all_features()
-    from orbit.strategy import live
+    from orbit.strategy import divergence_model, live
 
+    model = divergence_model.train()  # find candidates on 1H/4H/1D/1W, retrain on everything graded + your labels, score
+    logger.info(f"Divergence model: {model['n_market']} graded + {model['n_user']} of yours; {'trusted' if model['trusted'] else 'unproven'}.")
     counts = live.refresh()
     if any(counts.values()):
         logger.info(f"Suggestions: {counts['new']} new, {counts['expired']} expired, {counts['resolved']} outcomes resolved.")

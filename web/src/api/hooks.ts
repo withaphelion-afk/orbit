@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '.'
-import type { Asset, DecisionRequest } from './types'
+import type { Asset, DecisionRequest, DivergenceLabelRequest, Timeframe } from './types'
 
 const MIN = 60_000
 
@@ -26,7 +26,22 @@ export function useComponents() {
 export const useSuggestions = (enabled: boolean) =>
   useQuery({ queryKey: ['suggestions'], queryFn: api.suggestions, refetchInterval: 30_000, enabled })
 export const useJournal = (enabled: boolean) => useQuery({ queryKey: ['journal'], queryFn: api.journal, enabled })
-export const useDrift = (enabled: boolean) => useQuery({ queryKey: ['drift'], queryFn: api.drift, enabled })
+export const useDrift = (enabled: boolean, tf: Timeframe = '1d') => useQuery({ queryKey: ['drift', tf], queryFn: () => api.drift(tf), enabled })
+export const useBars = (a: Asset, tf: Timeframe, enabled = true) =>
+  useQuery({ queryKey: ['bars', a, tf], queryFn: () => api.bars(a, tf), enabled, refetchInterval: 30 * MIN })
+export const useDivergences = (a: Asset) => useQuery({ queryKey: ['divergences', a], queryFn: () => api.divergences(a), refetchInterval: 10 * MIN, retry: false })
+export const useDivergenceModel = () => useQuery({ queryKey: ['divergence-model'], queryFn: api.divergenceModel, refetchInterval: 30 * MIN, retry: false })
+export const useAlerts = () => useQuery({ queryKey: ['alerts'], queryFn: api.alerts, refetchInterval: MIN, retry: false })
+
+export function useLabelDivergence() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: DivergenceLabelRequest) => api.labelDivergence(req),
+    onSettled: () => {
+      for (const key of ['divergences', 'alerts', 'divergence-model']) qc.invalidateQueries({ queryKey: [key] })
+    },
+  })
+}
 export const useBacktest = (enabled: boolean) => useQuery({ queryKey: ['backtest'], queryFn: api.backtest, enabled, refetchInterval: 30 * MIN })
 export const useCalibration = (enabled: boolean) => useQuery({ queryKey: ['calibration'], queryFn: api.calibration, enabled, refetchInterval: 30 * MIN })
 export const useModel = (a: Asset) => useQuery({ queryKey: ['model', a], queryFn: () => api.model(a), refetchInterval: 30 * MIN, retry: false })
@@ -51,6 +66,9 @@ export function useCurrentRun() {
 }
 export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: api.runs, refetchInterval: 30_000 })
 export const useSchedule = () => useQuery({ queryKey: ['schedule'], queryFn: api.schedule, refetchInterval: 60_000 })
+export const useProjections = (days: number, includeNone: boolean) =>
+  useQuery({ queryKey: ['projections', days, includeNone], queryFn: () => api.projections(days, includeNone), refetchInterval: 30 * 60_000 })
+export const useProjectionTrack = () => useQuery({ queryKey: ['projections-track'], queryFn: api.projectionTrack, refetchInterval: 30 * 60_000 })
 export const useIntraday = (a: Asset, at: string | null, beforeHours: number, afterHours: number) =>
   useQuery({ queryKey: ['intraday', a, at, beforeHours, afterHours], queryFn: () => api.intraday(a, at!, beforeHours, afterHours), enabled: !!at })
 

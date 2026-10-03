@@ -1,14 +1,17 @@
-import { useQuotes, useRegime, useSky } from '../api/hooks'
-import type { Quote } from '../api/types'
-import { Flash, Pill, QueryState, Sparkline } from '../components/bits'
+import { Activity, Orbit } from 'lucide-react'
+import { useComponents, useQuotes, useRegime, useSky, useSuggestions } from '../api/hooks'
+import type { Quote, SuggestionView } from '../api/types'
+import { Empty, Flash, QueryState, Sparkline, StatCard, StatGrid } from '../components/bits'
 import { Panel } from '../components/Panel'
-import { ASSET_META } from '../config'
+import { ASSETS, ASSET_META } from '../config'
 import { day, daysFrom, price, signed, tone, transitLabel } from '../lib/format'
 import { useTerminal } from '../state/store'
 
 const REGIME_TONE = { BULL: 'up', BEAR: 'down', CHOPPY: 'mid' } as const
+const GATE_TONE = { BULL: 'up', BEAR: 'down', CHOPPY: 'warn' } as const
+const SOURCE_NOTE = { LIVE: 'live', DELAYED: 'delayed quote', STORED: 'last stored close' } as const
 
-function Row({ q }: { q: Quote }) {
+function Row({ q, pending }: { q: Quote; pending?: SuggestionView }) {
   const active = useTerminal((s) => s.asset === q.asset)
   const setAsset = useTerminal((s) => s.setAsset)
   const live = useTerminal((s) => s.prices[q.asset])
@@ -20,32 +23,45 @@ function Row({ q }: { q: Quote }) {
   const ch = last - q.prev_close
   const meta = ASSET_META[q.asset]
   const pos = ((last - lo) / (hi - lo || 1)) * 100
+  const key = ASSETS.indexOf(q.asset) + 1
 
   return (
-    <button className={`tk ${active ? 'on' : ''}`} onClick={() => setAsset(q.asset)} title={`${meta.pair} · ${source === 'STORED' ? 'last stored close' : source === 'DELAYED' ? 'delayed quote' : 'live'}`} aria-pressed={active}>
-      <span className="id">
-        <span className="sym">{meta.label}</span>
-        <span className="nm">{meta.name}</span>
-        {source !== 'LIVE' && <span className="src">{source}</span>}
+    <button className={`wl-row ${active ? 'on' : ''}`} onClick={() => setAsset(q.asset)} title={`${meta.pair} · ${SOURCE_NOTE[source]}`} aria-pressed={active}>
+      <kbd className="wl-key" title={`Press ${key} to select ${meta.label}`}>
+        {key}
+      </kbd>
+      <span className="wl-id">
+        <b className="wl-sym">{meta.label}</b>
+        <span className="wl-nm">{meta.name}</span>
+        {source !== 'LIVE' && <span className="wl-src">{source}</span>}
       </span>
-      <Flash value={last} className="px">
+      <Flash value={last} className="wl-px">
         {price(q.asset, last)}
       </Flash>
-      <span className={`rgl ${q.regime ? REGIME_TONE[q.regime] : 'dim'}`} title={q.regime_scope === 'SHARED' ? 'Shared BTC/ETH regime gate' : "Silver's own trend (same 50/200-day rule)"}>
+      <span className={`wl-rg ${q.regime ? REGIME_TONE[q.regime] : 'dim'}`} title={q.regime_scope === 'SHARED' ? 'Shared BTC/ETH regime gate' : "Silver's own trend (same 50/200-day rule)"}>
+        <i />
         {q.regime ?? 'NO READING'}
-        <span className="scope">{q.regime_scope === 'SHARED' ? ' · GATE' : ' · OWN TREND'}</span>
+        <span className="wl-scope">{q.regime_scope === 'SHARED' ? ' · GATE' : ' · OWN TREND'}</span>
       </span>
-      <span className={`ch ${tone(ch)}`}>
-        {signed(ch, meta.dp)}&nbsp;&nbsp;{signed((ch / q.prev_close) * 100)}%
+      <span className={`wl-ch ${tone(ch)}`} title="Change since the previous close">
+        {signed(ch, meta.dp)}
+        <span>{signed((ch / q.prev_close) * 100)}%</span>
       </span>
-      <Sparkline values={[...q.sparkline.slice(0, -1), last]} />
-      <span className="range">
+      <Sparkline values={[...q.sparkline.slice(0, -1), last]} height={24} />
+      <span className="wl-range" title="Day range: low, last price, high">
         <span>L {price(q.asset, lo)}</span>
-        <span className="rail">
-          <i style={{ left: `calc(${pos.toFixed(1)}% - 1px)` }} />
+        <span className="wl-rail">
+          <i style={{ left: `${pos.toFixed(1)}%` }} />
         </span>
         <span>H {price(q.asset, hi)}</span>
       </span>
+      {pending && (
+        <span className="wl-pend" title="A suggestion for this asset is waiting for your decision (SUGG, F4)">
+          PENDING <b className={pending.suggestion.direction === 'LONG' ? 'up' : 'down'}>{pending.suggestion.direction}</b>
+          <span>· CONF {pending.suggestion.confidence.toFixed(2)}</span>
+          <span>· R:R {pending.risk_reward.toFixed(1)}</span>
+        </span>
+      )}
     </button>
   )
 }
@@ -54,6 +70,8 @@ export function WatchlistPanel({ hidden }: { hidden: boolean }) {
   const quotes = useQuotes()
   const regime = useRegime()
   const sky = useSky()
+  const { components } = useComponents()
+  const suggestions = useSuggestions(!!components?.strategy)
   const setView = useTerminal((s) => s.setView)
   const gate = regime.data?.find((r) => r.scope === 'SHARED')
   const next = (sky.data ?? [])
@@ -62,7 +80,7 @@ export function WatchlistPanel({ hidden }: { hidden: boolean }) {
     .sort((a, b) => a.date.localeCompare(b.date))[0]
 
   return (
-    <Panel code="WL" title="Watchlist" hidden={hidden} meta={<span className="dim">1–4 SELECT</span>}>
+    <Panel code="WL" title="Watchlist" description="Click an instrument or press 1–4 to chart it." hidden={hidden}>
       <div className="watch">
         <div className="wl-head">
           <span className="lbl">Asset · regime</span>
@@ -70,32 +88,41 @@ export function WatchlistPanel({ hidden }: { hidden: boolean }) {
         </div>
         <nav className="wl" aria-label="Watchlist">
           <QueryState isPending={quotes.isPending} error={quotes.error} what="quotes" />
-          {quotes.data?.map((q) => <Row key={q.asset} q={q} />)}
+          {quotes.data?.length === 0 && <Empty title="NO QUOTES">The API returned no instruments.</Empty>}
+          {quotes.data?.map((q) => (
+            <Row key={q.asset} q={q} pending={suggestions.data?.find((s) => s.suggestion.asset === q.asset)} />
+          ))}
         </nav>
-        <div className="glance">
-          <button onClick={() => setView('SYS')} title="Shared BTC/ETH regime gate">
-            <span className="lbl">Regime gate</span>
-            <span className="v">
-              {gate?.value ? <Pill tone={gate.value === 'BULL' ? 'ok' : gate.value === 'BEAR' ? 'drift' : 'watch'}>{gate.value}</Pill> : '—'}
-              {gate?.since && <span className="since">since {day(gate.since)}</span>}
-            </span>
+        <StatGrid>
+          <button className="wl-tile" onClick={() => setView('SYS')} title="Shared BTC/ETH regime gate (SYS, F8)">
+            <StatCard
+              label="Regime gate"
+              value={gate?.value ?? '—'}
+              tone={gate?.value ? GATE_TONE[gate.value] : 'dim'}
+              icon={<Activity size={15} strokeWidth={1.75} />}
+              caption={
+                <span className="wl-cap">
+                  <span>{gate?.since ? `since ${day(gate.since)}` : ''}</span>
+                  <kbd>F8</kbd>
+                </span>
+              }
+            />
           </button>
-          <button onClick={() => setView('ASTRO')} title="Next transit (ASTRO, F7)">
-            <span className="lbl">
-              Next transit <kbd>F7</kbd>
-            </span>
-            <span className="v">
-              {next ? (
-                <>
-                  <span className="astro-t">{transitLabel(next)}</span>
-                  <span className="since">{daysFrom(next.date)}</span>
-                </>
-              ) : (
-                '—'
-              )}
-            </span>
+          <button className="wl-tile astro" onClick={() => setView('ASTRO')} title="Next transit (ASTRO, F7)">
+            <StatCard
+              label="Next transit"
+              value={next ? transitLabel(next) : '—'}
+              tone={next ? 'astro' : 'dim'}
+              icon={<Orbit size={15} strokeWidth={1.75} />}
+              caption={
+                <span className="wl-cap">
+                  <span>{next ? `${daysFrom(next.date)} · ${day(next.date)}` : ''}</span>
+                  <kbd>F7</kbd>
+                </span>
+              }
+            />
           </button>
-        </div>
+        </StatGrid>
       </div>
     </Panel>
   )

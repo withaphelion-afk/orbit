@@ -74,10 +74,17 @@ ANALYSIS_DAILY_AT_UTC = "00:30"  # after the 00:00 UTC daily close
 PLACEBO_WEEKDAY = 6  # Sunday's scheduled run also runs the placebo check (0 = Monday)
 
 # --- Strategy, backtest, journal ------------------------------------------------
-# The strategy's own parameters live in strategy/rsi_divergence.py (fixed, not fitted).
+# The divergence system: detection in strategy/divergence.py (the same in web/src/lib/divergence.ts), the
+# learning model in strategy/divergence_model.py.
+DIVERGENCE_HORIZON_BARS = {"1h": 24, "4h": 30, "1d": 30, "1w": 12}  # grading window, and a trade's time exit, in bars
+DIVERGENCE_TRAIN_BARS = {"1h": 30000}  # most recent 1H bars used for training (the rest is plenty and keeps a run fast)
+DIVERGENCE_USER_WEIGHT = 5  # your ✓/✗ counts this many times the market's own grade
+DIVERGENCE_ALERT_QUANTILE = 0.8  # alert on confirmed divergences scoring in the top 20% of their timeframe
+DIVERGENCE_SUGGEST_TIMEFRAMES = ("4h", "1d")  # alerts on these become Take/Skip suggestions; the rest are alerts only
+DIVERGENCE_TARGET_R = 2.0  # target = 2x the risk; the stop sits at the second swing's extreme (no ATR)
 BACKTEST_COST_PER_SIDE = {"BTC": 0.001, "ETH": 0.001, "SOL": 0.001, "SILVER": 0.0005}  # fees, as a fraction
 BACKTEST_SLIPPAGE = 0.0005  # per side
-SUGGESTION_EXPIRY_BARS = 3  # an undecided suggestion expires after this many daily bars
+SUGGESTION_EXPIRY_BARS = 3  # an undecided suggestion expires after this many bars of its own timeframe
 DRIFT_WATCH_Z = 1.0
 DRIFT_SCALE_DOWN_Z = 2.0
 

@@ -135,6 +135,14 @@ def placebo() -> dict | None:
     return _cached("placebo", [path], build)
 
 
+def projection_track():
+    """The forward track record's summary (analysis/projection_log.py)."""
+    from orbit.analysis import projection_log
+
+    path = projection_log.LOG_PATH
+    return _cached(f"projection-track:{path}", [path], lambda: projection_log.summary(path))
+
+
 def runner_log(limit: int = 40) -> list[tuple[datetime, str, str]]:
     """The last `limit` log lines, newest first (tracebacks and blank lines skipped)."""
     if not LOG_PATH.exists():

@@ -324,6 +324,7 @@ export interface SuggestionView {
   created_at: ISODateTime
   risk_reward: number
   suggestion: TradeSuggestion
+  timeframe: Timeframe // the bars it lives on; expiry and outcome count bars of this timeframe
 }
 
 export interface DecisionRequest {
@@ -341,6 +342,7 @@ export interface JournalRow {
   expired: boolean // no decision in time (logged as SKIPPED)
   counterfactual_pnl: number | null // what a skipped/expired suggestion would have returned
   exit_reason: 'target' | 'stop' | 'time' | null
+  timeframe: Timeframe
 }
 
 export interface EquityPoint {
@@ -351,6 +353,7 @@ export interface EquityPoint {
 }
 
 export interface DriftReport {
+  timeframe: Timeframe
   status: 'OK' | 'WATCH' | 'DRIFT'
   z_score: number
   scale_down_at: number
@@ -388,16 +391,20 @@ export interface BacktestReport {
   generated_at: ISODateTime
   strategy: string
   parameters: Record<string, unknown>
-  pooled: BacktestStats
+  pooled: BacktestStats // 1D, also under timeframes
   assets: Record<string, BacktestStats>
+  timeframes: Record<string, { pooled: BacktestStats; assets: Record<string, BacktestStats>; threshold: number }>
 }
 
-/** GET /api/calibration: the feedback loop (src/orbit/strategy/calibrate.py). */
+/** GET /api/calibration: the feedback loop, i.e. the learned divergence model (src/orbit/strategy/divergence_model.py). */
 export interface CalibrationReport {
   trained_at: ISODateTime
   features: string[]
-  n_backtest: number
-  n_live: number
+  n_backtest: number // divergences the market graded
+  n_live: number // divergences you labelled
+  thresholds?: Record<string, number>
+  by_timeframe?: Record<string, { candidates: number; graded: number; worked: number | null }>
+  agreement?: DivergenceAgreement
   base_win_rate: number | null
   skill: boolean // beat the plain win rate out-of-sample; only then does it set confidence
   note?: string
@@ -493,4 +500,151 @@ export interface ScheduleView {
   runner_running: boolean
   last_success_at: ISODateTime | null
   last_success_trigger: string | null
+}
+
+// ---------- projections (analysis/projections.py, api/schemas.py) ----------
+
+/** A pattern's past occurrences that happened in conditions like today's. */
+export interface LikeNow {
+  regime: string
+  volatility_percentile: number
+  n: number
+  matches: number
+  share: number
+}
+
+/** One upcoming event for one asset, with what history says followed it. Never a promise:
+ * `trusted` is only true for patterns that survive multiple-testing correction. */
+export interface Projection {
+  id: string
+  asset: Asset
+  event: TransitEvent
+  pattern_id: string
+  description: string
+  label: ConfidenceLabel
+  score: number
+  horizon_days: number
+  outcome: Outcome
+  n: number
+  hit_rate: number
+  base_rate: number
+  lift: number | null
+  ci_low: number
+  ci_high: number
+  q_value: number | null
+  mean_return: number
+  win_rate: number
+  timing_headline_hours: number | null
+  timing_dominant: Outcome | null
+  timing_label: ConfidenceLabel
+  median_hours_to_move: number | null
+  window_start: ISODateTime
+  window_end: ISODateTime
+  like_now: LikeNow | null
+  group_id: string
+  conflict: boolean
+  trusted: boolean
+  note: string
+}
+
+export interface ProjectionView extends Projection {
+  horizon_stat: PatternHorizonStat
+}
+
+export interface LoggedProjection {
+  projection: Projection
+  recorded_at: ISODateTime
+  graded_at: ISODateTime | null
+  graded_through: ISODateTime | null
+  actual_outcome: Outcome | null
+  forward_return: number | null
+  hit: boolean | null
+  void_reason: string | null
+}
+
+export interface TrackBucket {
+  recorded: number
+  pending: number
+  graded: number
+  void: number
+  hits: number
+  hit_rate: number | null
+  avg_base_rate: number | null
+}
+
+export interface ProjectionTrack {
+  first_recorded_at: ISODateTime | null
+  total: TrackBucket
+  by_label: Record<string, TrackBucket>
+  recent: LoggedProjection[]
+  note: string
+}
+
+// ---------- divergences (strategy/divergence.py, divergence_model.py) ----------
+
+export type Timeframe = '1h' | '4h' | '1d' | '1w'
+
+/** [time (epoch s), open, high, low, close, volume] */
+export type BarRow = [number, number, number, number, number, number]
+
+export interface DivergenceCandidate {
+  id: string
+  kind: 'regular' | 'hidden' | 'manual'
+  direction: Direction
+  forming: boolean
+  t1: number // epoch seconds of each swing's bar
+  t2: number
+  confirmed_at: number | null
+  p1: number
+  p2: number
+  r1: number
+  r2: number
+  score: number | null // the model's probability that it works
+  oos_score: number | null
+  alert: boolean
+  outcome: 'worked' | 'failed' | null
+  you: 'real' | 'not' | null
+}
+
+export interface DivergenceSet {
+  generated_at: ISODateTime
+  trusted: boolean
+  thresholds: Record<string, number>
+  candidates: Partial<Record<Timeframe, DivergenceCandidate[]>>
+}
+
+export interface DivergenceAgreement {
+  labelled: number
+  compared: number
+  agree: number
+  disagree: { id: string; you: string; market: string }[]
+}
+
+/** What the browser needs to score live divergences exactly as the backend does. */
+export interface DivergenceModel {
+  trained_at: ISODateTime
+  features: string[]
+  model: { mu: number[]; sd: number[]; coef: number[] } | null
+  thresholds: Record<string, number>
+  trusted: boolean
+  base_rate: number | null
+  agreement: DivergenceAgreement
+  by_timeframe: Record<string, { candidates: number; graded: number; worked: number | null }>
+}
+
+export interface AlertItem extends DivergenceCandidate {
+  asset: Asset
+  timeframe: Timeframe
+  trusted: boolean
+}
+
+export interface DivergenceLabelRequest {
+  asset: Asset
+  timeframe: Timeframe
+  t1: number
+  t2: number
+  direction: Direction
+  verdict: 'real' | 'not'
+  note?: string
+  source?: 'detected' | 'manual'
 }

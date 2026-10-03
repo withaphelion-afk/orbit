@@ -57,7 +57,7 @@ def test_system_reports_never_run_and_components(client, monkeypatch):
     body = client.get("/api/system").json()
     assert body["runner"]["state"] == "NEVER_RUN"
     assert body["components"] == {"runner": False, "playbook": False, "strategy": True, "journal": True, "backtest": False, "alerts": False}
-    assert body["strategy"] == "RSI(14) divergence"
+    assert body["strategy"] == "RSI divergence (learned), 4H and 1D"
     assert body["auto_execution"] is False
 
 

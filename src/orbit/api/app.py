@@ -19,7 +19,19 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from orbit.config import settings
-from orbit.core.types import Asset, Candle, ConfidenceLabel, Decision, Direction, PatternResult, Planet, Signal, SpeedClass, TransitEventType
+from orbit.core.types import (
+    Asset,
+    Candle,
+    ConfidenceLabel,
+    Decision,
+    Direction,
+    PatternResult,
+    Planet,
+    ProjectionTrack,
+    Signal,
+    SpeedClass,
+    TransitEventType,
+)
 from orbit.data.dates import today_utc, utc_day
 from orbit.api import store
 from orbit.api.live import LiveFeed
@@ -28,6 +40,7 @@ from orbit.analysis.jobs import AnalysisRun
 from orbit.api.schemas import (
     Components,
     DecisionRequest,
+    DivergenceLabelRequest,
     DriftReport,
     JournalRow,
     SuggestionView,
@@ -37,6 +50,7 @@ from orbit.api.schemas import (
     PatternSummary,
     PlaybookOverview,
     PlaybookView,
+    ProjectionView,
     Quote,
     RegimeReading,
     RunnerStatus,
@@ -48,9 +62,10 @@ from orbit.api.schemas import (
 )
 from orbit.analysis.confidence import RANK
 from orbit.analysis.patterns import patterns_for_event
+from orbit.analysis.projections import DAYS_AHEAD, build_projections, current_conditions, headline_stat
 from orbit.analysis.transit_events import event_label
 from orbit.runner.status import read_status
-from orbit.strategy.rsi_divergence import NAME as STRATEGY_NAME
+from orbit.backtest.engine import NAME as STRATEGY_NAME
 from orbit.vedic.patterns import speed_class
 
 ASSETS = [Asset.BTC, Asset.ETH, Asset.SOL, Asset.SILVER]
@@ -72,6 +87,7 @@ def _journal_row(r) -> JournalRow:
         expired=expired,
         counterfactual_pnl=r.paper.return_pct if skipped and r.paper else None,
         exit_reason=out.reason if out else None,
+        timeframe=r.timeframe,
     )
 
 
@@ -155,21 +171,20 @@ def create_app(live: bool = True) -> FastAPI:
 
     @app.get("/api/signals/{asset}", response_model=list[Signal])
     def signals(asset: Asset):
-        """Every RSI divergence in the history (dated to its confirmation bar), plus the days the regime turned BULL or BEAR."""
-        from orbit.strategy import rsi_divergence as strat
+        """The daily divergences that alerted (dated to their confirmation bar), plus the days the regime turned BULL or BEAR."""
+        from orbit.strategy import divergence_model as dm
 
-        series = store.price_series(asset)
         out = []
-        if len(series) > strat.RSI_PERIOD:
-            for d in strat.find_signals(series):
+        for c in ((dm.load_recent() or {}).get("candidates", {}).get(asset.value, {}).get("1d", [])):
+            if c.get("alert"):
                 out.append(
                     Signal(
                         name="rsi_divergence",
                         asset=asset,
-                        timestamp=datetime.fromisoformat(str(series.dates[d.signal_index])).replace(tzinfo=timezone.utc),
-                        direction=d.direction,
-                        strength=float(min(1.0, d.rsi_difference / 20)),
-                        reason=strat.reason(d, series),
+                        timestamp=datetime.fromtimestamp(c["confirmed_at"], tz=timezone.utc),
+                        direction=Direction(c["direction"]),
+                        strength=float(min(1.0, c["score"] or 0)),
+                        reason=f"{c['kind'].capitalize()} {'bullish' if c['direction'] == 'LONG' else 'bearish'} RSI divergence, score {c['score']:.0%}",
                     )
                 )
         by_day, scope = store.regime_by_day(asset)
@@ -307,6 +322,28 @@ def create_app(live: bool = True) -> FastAPI:
             raise HTTPException(404, f"No pattern {pattern_id} for {asset.value}.")
         return r
 
+    # ------------------------------------------------------------ projections
+
+    @app.get("/api/projections", response_model=list[ProjectionView])
+    def projections(days: int = Query(DAYS_AHEAD, ge=1, le=730), include_none: bool = False):
+        """Upcoming events joined to each asset's playbook evidence. Weak and none rows are
+        unproven (trusted=false); insufficient_data is never projected."""
+        playbooks = {a: pb for a in ASSETS if (pb := store.playbook(a)) is not None}
+        if not playbooks:
+            raise HTTPException(404, "No playbook yet, so there is no evidence to project from. Run the analysis (or scripts/build_playbook.py).")
+        conditions = {}
+        for asset in playbooks:
+            by_day, _ = store.regime_by_day(asset)
+            conditions[asset] = current_conditions(store.price_series(asset), by_day[max(by_day)] if by_day else None)
+        rows = build_projections(store.transit_events(), playbooks, datetime.now(timezone.utc), days, include_none, conditions)
+        results = {a: {r.pattern_id: r for r in pb.patterns} for a, pb in playbooks.items()}
+        return [ProjectionView(**dict(p), horizon_stat=headline_stat(results[p.asset][p.pattern_id])) for p in rows]
+
+    @app.get("/api/projections/track", response_model=ProjectionTrack)
+    def projections_track():
+        """How recorded projections turned out once their windows closed, by label, beside chance."""
+        return store.projection_track()
+
     # ------------------------------------------------------------ strategy, journal, backtest
 
     @app.get("/api/suggestions", response_model=list[SuggestionView])
@@ -316,7 +353,7 @@ def create_app(live: bool = True) -> FastAPI:
 
         pending = [r for r in journal_store.load() if r.status == "pending"]
         return [
-            SuggestionView(id=r.id, created_at=r.created_at, risk_reward=r.risk_reward, suggestion=r.suggestion)
+            SuggestionView(id=r.id, created_at=r.created_at, risk_reward=r.risk_reward, suggestion=r.suggestion, timeframe=r.timeframe)
             for r in sorted(pending, key=lambda r: r.created_at, reverse=True)
         ]
 
@@ -344,10 +381,10 @@ def create_app(live: bool = True) -> FastAPI:
         return sorted(rows, key=lambda r: r.decided_at, reverse=True)
 
     @app.get("/api/drift", response_model=DriftReport)
-    def drift():
+    def drift(timeframe: str = Query("1d", pattern="^(4h|1d)$")):
         from orbit.backtest.drift import report
 
-        rep = report()
+        rep = report(timeframe)
         if rep is None:
             raise HTTPException(404, "No backtest yet, so there is no expected performance to compare against. Run the analysis.")
         return rep
@@ -362,23 +399,81 @@ def create_app(live: bool = True) -> FastAPI:
         return rep
 
     @app.get("/api/backtest/{asset}")
-    def backtest_asset(asset: Asset):
+    def backtest_asset(asset: Asset, timeframe: str = Query("1d", pattern="^(4h|1d)$")):
         from orbit.backtest.engine import load
 
-        rep = load(asset.value)
+        rep = load(asset.value, timeframe)
         if rep is None:
             raise HTTPException(404, f"No backtest for {asset.value} yet.")
         return rep
 
     @app.get("/api/calibration")
     def calibration():
-        """The feedback loop: how confidence is set, and whether it has proven itself out-of-sample."""
-        from orbit.strategy.calibrate import load
+        """The feedback loop: the learned divergence model, and whether it has proven itself out-of-sample."""
+        from orbit.strategy.divergence_model import load_model
 
-        rep = load()
+        rep = load_model()
         if rep is None:
-            raise HTTPException(404, "The feedback loop hasn't been trained yet. Run the analysis.")
-        return {k: v for k, v in rep.items() if k != "model"}
+            raise HTTPException(404, "The divergence model hasn't been trained yet. It trains on every runner cycle.")
+        return {
+            **{k: v for k, v in rep.items() if k != "model"},
+            # the names the FEEDBACK screen has always read
+            "n_backtest": rep["n_market"], "n_live": rep["n_user"], "base_win_rate": rep["base_rate"], "skill": rep["trusted"],
+        }
+
+    # ------------------------------------------------------------ divergences: candidates, model weights, alerts, your labels
+
+    @app.get("/api/divergences/model")
+    def divergence_model_weights():
+        """What the browser needs to score live divergences exactly as the backend does."""
+        from orbit.strategy.divergence_model import load_model
+
+        rep = load_model()
+        if rep is None:
+            raise HTTPException(404, "The divergence model hasn't been trained yet. It trains on every runner cycle.")
+        return {k: rep.get(k) for k in ("trained_at", "features", "model", "thresholds", "trusted", "base_rate", "agreement", "by_timeframe")}
+
+    @app.get("/api/divergences/{asset}")
+    def divergences(asset: Asset, timeframe: str | None = None):
+        """Recent divergence candidates (last 1,000 bars per timeframe), scored, with outcomes and your labels."""
+        from orbit.strategy.divergence_model import load_recent
+
+        rec = load_recent()
+        if rec is None:
+            raise HTTPException(404, "No divergences yet. The runner finds them on its next cycle.")
+        by_tf = rec["candidates"].get(asset.value, {})
+        return {"generated_at": rec["generated_at"], "trusted": rec["trusted"], "thresholds": rec["thresholds"],
+                "candidates": {tf: v for tf, v in by_tf.items() if timeframe in (None, tf)}}
+
+    @app.get("/api/bars/{asset}")
+    def chart_bars(asset: Asset, timeframe: str = Query("1d", pattern="^(1h|4h|1d|1w)$"), limit: int = Query(1000, ge=50, le=5000)):
+        """The last `limit` completed bars at 1H/4H/1D/1W as [time, open, high, low, close, volume] rows (time: epoch seconds)."""
+        from orbit.strategy import bars as bars_mod
+
+        b = bars_mod.load(asset, timeframe).tail(limit)
+        return [[int(b.time[k]), float(b.open[k]), float(b.high[k]), float(b.low[k]), float(b.close[k]), float(b.volume[k])] for k in range(len(b))]
+
+    @app.get("/api/alerts")
+    def alerts(days: int = Query(14, ge=1, le=365)):
+        """Confirmed divergences that scored above their timeframe's threshold, newest first."""
+        from orbit.strategy.divergence_model import load_recent
+
+        rec = load_recent() or {"candidates": {}, "trusted": False}
+        since = datetime.now(timezone.utc).timestamp() - days * 86400
+        out = [{**c, "asset": a, "timeframe": tf, "trusted": rec["trusted"]}
+               for a, by_tf in rec["candidates"].items() for tf, cands in by_tf.items() for c in cands
+               if c.get("alert") and (c.get("confirmed_at") or 0) >= since]
+        return sorted(out, key=lambda c: -c["confirmed_at"])
+
+    @app.post("/api/divergences/label")
+    def label_divergence(req: DivergenceLabelRequest):
+        """Your ✓ real / ✗ not real on a divergence (or one it missed). Counts more than the market's grade on the next retrain."""
+        from orbit.strategy.divergence_model import add_label
+
+        try:
+            return add_label(req.asset.value, req.timeframe, req.t1, req.t2, req.direction, req.verdict, req.note, req.source)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
 
     @app.get("/api/model/{asset}")
     def astro_model(asset: Asset):

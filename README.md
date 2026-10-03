@@ -25,10 +25,10 @@ This is a learning project too: modules are written to be read, and comments exp
 | Vedic sky | Sidereal positions of the 9 grahas and ~33,000 events (ingresses, stations, yuti, drishti, eclipses, yogas), each timed to the second | `vedic/` |
 | Features | Returns, trend vs. 50/200-day averages, volatility, the BTC/ETH regime gate, Vedic states | `features/` |
 | Research | The Vedic playbook (every event type and combination, with significance tests) and the Vedic model | `analysis/` |
-| Strategy | RSI(14) divergence on daily bars: live suggestions with entry, stop and target | `strategy/` |
+| Strategy | RSI divergence on 1H/4H/1D/1W, scored by a self-learning model; alerts on all four, suggestions on 4H and 1D | `strategy/` |
 | Backtest | The strategy over full history with costs, and live-vs-backtest drift | `backtest/` |
 | Journal | Every suggestion, your decision, and its outcome, including what skipped ones would have returned | `journal/` |
-| Feedback loop | Learns which divergences won; sets confidence only once it beats the plain win rate out of sample | `strategy/calibrate.py` |
+| Feedback loop | The model retrains hourly on every divergence the market graded plus your ✓/✗; trusted only once it beats the plain rate out of sample | `strategy/divergence_model.py` |
 | Runner | Data → features → suggestions every hour; the analysis daily at 00:30 UTC | `runner/` |
 | Web terminal | Keyboard-first terminal: chart, watchlist, suggestions, journal, drift, astro research, system | `web/` |
 
@@ -206,42 +206,50 @@ uv run python scripts/backfill_silver.py   # the spot-silver download (shared al
 
 ## Strategy, backtest, journal and feedback loop
 
-**The strategy** (`strategy/rsi_divergence.py`) is RSI(14) divergence on daily bars, with textbook parameters fixed before looking at any results:
-- **Bullish:** a lower swing low in price with a higher RSI low, the first low under RSI 40. **Bearish** is the mirror: a higher swing high with a lower RSI high, the first above 60.
-- **Swings:** a swing is the extreme of the 5 bars before and 3 after it, so the signal fires 3 bars later and uses nothing unknown then (tested).
-- **Timing and levels:** the two swings are 5–60 bars apart. The stop sits 0.5 ATR beyond the second swing, the target is 2R, and the trade exits after 30 bars if neither is hit.
+**Finding divergences** (`strategy/divergence.py`, and the same algorithm in `web/src/lib/divergence.ts`):
+- **Timeframes:** 1H, 4H (built from 1H), 1D and 1W (built from 1D), for every asset.
+- **Broad on purpose:** swings are loose (2 bars each side, each with a strength), and every pair of swings 5–60 bars apart where price and RSI(14) disagree is a candidate. That covers regular divergences and hidden ones, with no RSI-zone rule and no ATR. The model decides which matter.
+- **One algorithm, two languages:** the backend (training, backtest, suggestions) and the browser (live chart) must find exactly the same divergences. `tests/fixtures/divergence_cases.json` is checked by both test suites, so CI fails if they ever disagree.
 
-**The backtest** (`backtest/engine.py`):
-- **Execution:** entry at the next bar's open. When a bar touches both levels, the stop is assumed hit first. Gaps through a level exit at the open. One trade at a time per asset.
+**Learning which ones matter** (`strategy/divergence_model.py`):
+- **The market grades every divergence:** it worked if price moved the asset's own top-25% move for that timeframe in its direction within the horizon (1H: 24 bars, 4H/1D: 30, 1W: 12), before moving the same distance against it.
+- **You teach it:** ✓ real / ✗ not real on the ORBIT chart and in ALERTS, or mark one it missed by clicking its two swings. Your label overrides the market's grade and counts 5×. Labels are saved in the private data repo (`journal/divergence_labels.json`).
+- **Training:** a numpy logistic model on what was known at confirmation (the two swings' RSI, the size of the disagreement, swing strength, bars between, kind, direction, volume trend, the trend before, the BTC/ETH regime, the volatility percentile, timeframe and asset). It retrains on every runner cycle.
+- **Honesty:** a walk-forward check scores it on later divergences it never saw. It's marked trusted only once that beats always guessing the plain rate. Until then every score shows as "unproven". Today: 153,481 graded divergences, 24.5% worked, out-of-sample Brier 0.183 vs 0.181 for the plain rate (AUC 0.51). **Unproven.**
+- **Alerts:** a confirmed divergence scoring in the top 20% of its timeframe (`DIVERGENCE_ALERT_QUANTILE`) raises an alert: a badge, a snackbar and a row in ALERTS (F9). The browser raises them the moment one confirms on the open chart, and the runner hourly for every asset. 1H and 1W are alerts only. 4H and 1D also become suggestions.
+
+**The backtest** (`backtest/engine.py`), per timeframe, never mixed:
+- **Which trades:** only divergences whose *out-of-sample* score reached the alert threshold. The model never saw what came next.
+- **Execution:** entry at the next bar's open, stop at the second swing's extreme (no ATR), target 2R, out after the timeframe's horizon. When a bar touches both levels, the stop is assumed hit first; a gap through a level exits at the open. One trade at a time per asset.
 - **Costs:** 0.1% a side (0.05% for silver), plus 0.05% slippage.
 
-Results as of Sept 2026:
+Results as of Oct 2026:
 
 | | Trades | Win rate | Avg R | Profit factor | Max drawdown |
 | --- | --- | --- | --- | --- | --- |
-| All assets | 204 | 38.7% | −0.020R | 0.97 | −18.8R |
-| BTC | 67 | 36% | −0.067R | 0.88 | −8.2R |
-| ETH | 39 | 44% | −0.008R | 0.99 | −9.3R |
-| SOL | 23 | 30% | −0.057R | 0.90 | −3.8R |
-| Silver (spot, 2003 on) | 75 | 41% | +0.028R | 1.05 | −8.8R |
-| Longs (all) | 71 | 39% | +0.080R | | |
-| Shorts (all) | 133 | 38% | −0.073R | | |
+| **1D**, all assets | 411 | 38% | +0.012R | 1.02 | −28.2R |
+| 1D BTC / ETH / SOL / silver | 92 / 68 / 109 / 142 | 40 / 34 / 45 / 34% | +0.03 / +0.02 / +0.20 / −0.15R | | |
+| 1D longs / shorts | 302 / 109 | | +0.057 / −0.113R | | |
+| **4H**, all assets | 2,485 | 38% | −0.118R | 0.83 | −301.6R |
+| 4H longs / shorts | 1,794 / 691 | | −0.092 / −0.185R | | |
 
-Basic RSI divergence is roughly break-even after costs: longs positive, shorts negative, silver slightly positive. That's the honest starting point.
+In plain words: on 1D the learned selection is about break-even after costs. Longs are positive and SOL is the best, but silver and shorts lose. On 4H it loses steadily. The model isn't better than chance yet, so these numbers are close to "take every divergence". Your ✓/✗ labels are what should move them.
 
 **Suggestions and the journal:**
-- **Where they come from:** a divergence that confirmed on the latest completed bar becomes a suggestion in SUGG, with entry at the close, the stop and a 2R target.
-- **Your decision:** take, skip or modify it. Undecided suggestions expire after 3 bars.
-- **Outcomes:** every suggestion is followed to its outcome on the strategy's levels, taken or not, so the journal shows what skipped ones would have returned. Taken or modified ones are also followed on the levels you used.
+- **Where they come from:** a 4H or 1D alert that confirmed on the latest completed bar becomes a suggestion in SUGG. Entry is that bar's close, the stop is at the swing extreme, and the target is 2R.
+- **Your decision:** take, skip or modify it. An undecided suggestion expires after 3 bars of its own timeframe: 12 hours on 4H, 3 days on 1D.
+- **Outcomes:** every suggestion is followed to its outcome on the strategy's levels, taken or not, so the journal shows what skipped ones would have returned. Taken or modified ones are also followed on the levels you used. JRNL has a timeframe column and filter.
 
-**The feedback loop** (`strategy/calibrate.py`):
-- **What it learns from:** a small logistic model, using what was known at the signal: divergence size, RSI level, the price move, swing distance, ATR, volatility percentile, trend agreement, and direction.
-- **Training:** on every backtest trade and finished live suggestion (live ones count 3×), and retrained each analysis run.
-- **When it counts:** it sets confidence only once it beats the plain win rate walk-forward. So far it doesn't (Brier 0.264 vs 0.252, AUC 0.53), so confidence is the plain win rate, about 39%.
-
-**Drift** (`backtest/drift.py`): live win rate vs. the backtest's, as a z-score, from 10 finished live suggestions. At 1σ it's WATCH; at 2σ it's DRIFT, the point to scale down.
+**Drift** (`backtest/drift.py`): live win rate vs. the backtest's, per timeframe (4H and 1D apart), as a z-score, from 10 finished live suggestions. At 1σ it's WATCH; at 2σ it's DRIFT, the point to scale down.
 
 ## Research findings
+
+**Projections** (ASTRO → PROJECTIONS, the default tab; `analysis/projections.py`):
+- **What it shows:** every upcoming Vedic event per asset, with what followed it in the past. That covers the projected outcome, the odds against normal with a 95% range, size, timing, N and the honesty label.
+- **Trust:** only STRONG or MODERATE patterns are presented as trusted. Today none are, so every row says "unproven, not significant".
+- **Grouping:** overlapping events are grouped, and opposite projections are flagged.
+- **Track record:** each projection is logged when made and graded after its window. That is a live test history-fitting can't fake.
+
 
 **Method** (Vedic rules only: sidereal zodiac, Lahiri ayanamsa, 9 grahas, rashi drishti, classical yogas):
 - **Patterns tested:** 419 per asset. They cover rashi and nakshatra ingresses, vakri/margi stations, yuti and drishti per pair (with a `|VAKRI` variant), asta, graha yuddha, amavasya and purnima, eclipses, named yogas, and malefic/benefic clusters.
@@ -269,7 +277,7 @@ Both re-run daily; a pattern only counts once it clears the correction.
 
 | Phase | Status |
 | --- | --- |
-| Strategy definition | Done: RSI(14) divergence, daily, all four assets |
+| Strategy definition | Done: RSI divergence on 1H/4H/1D/1W with a self-learning model; suggestions on 4H and 1D |
 | Data pipeline | Done: stitched full histories, incremental, ephemeris to 2028 |
 | Backtest and research | Done: strategy backtest with costs; Vedic playbook and model, placebo-checked |
 | Journal and feedback loop | Done: every suggestion and outcome; confidence only once proven out of sample |

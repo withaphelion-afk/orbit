@@ -1,8 +1,25 @@
 import { ColorType, createChart, LineSeries, LineStyle, type UTCTimestamp } from 'lightweight-charts'
-import { useEffect, useRef, useState } from 'react'
+import {
+  Activity,
+  ChartLine,
+  Database,
+  Gauge,
+  Hash,
+  Info,
+  Percent,
+  Radar,
+  Scale,
+  ShieldAlert,
+  ShieldCheck,
+  Sigma,
+  Target,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useBacktest, useCalibration, useComponents, useDrift } from '../api/hooks'
 import type { BacktestReport, BacktestStats, CalibrationReport, DriftReport } from '../api/types'
-import { Empty, NotBuilt, Pill, QueryState, Seg } from '../components/bits'
+import { Empty, NotBuilt, Pill, QueryState, Seg, StatCard, StatGrid } from '../components/bits'
 import { Panel } from '../components/Panel'
 import { ASSET_META } from '../config'
 import { day, num, signed, tone } from '../lib/format'
@@ -11,9 +28,23 @@ import { readTheme } from '../lib/theme'
 const ts = (iso: string) => Math.floor(Date.parse(iso.length === 10 ? `${iso}T00:00:00Z` : iso) / 1000) as UTCTimestamp
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${num(v * 100, 0)}%`)
 const r = (v: number | null | undefined, dp = 2) => (v === null || v === undefined ? '—' : `${signed(v, dp)}R`)
+const statTone = (v: number) => (v > 0 ? 'up' : v < 0 ? 'down' : undefined)
+const ico = { size: 18, strokeWidth: 1.75 }
 
 type View = 'DRIFT' | 'BACKTEST' | 'FEEDBACK'
 const VIEWS: View[] = ['DRIFT', 'BACKTEST', 'FEEDBACK']
+
+const TITLE: Record<View, string> = {
+  DRIFT: 'Backtest vs live',
+  BACKTEST: 'RSI divergence backtest, full history',
+  FEEDBACK: 'Feedback loop: how confidence is set',
+}
+
+const DESCRIPTION: Record<View, string> = {
+  DRIFT: 'Checks whether live suggestions win as often as the backtest said they would, and tells you when to scale down.',
+  BACKTEST: "How the strategy would have traded every asset's full stored history, with costs and slippage included.",
+  FEEDBACK: 'How each suggestion’s confidence is set, and whether the model behind it has earned the right to set it.',
+}
 
 /** One or more lines on a lightweight chart; `dashed` lines are reference lines. */
 function Lines({ lines }: { lines: { points: { time: UTCTimestamp; value: number }[]; color: string; title?: string; dashed?: boolean; dotted?: boolean; width?: 1 | 2 }[] }) {
@@ -50,27 +81,69 @@ function Lines({ lines }: { lines: { points: { time: UTCTimestamp; value: number
   return <div className="lw-host" ref={host} />
 }
 
+/** A titled card inside a view; `aside` sits at the right of the card's header. */
+function Card({ title, aside, className = '', children }: { title: string; aside?: ReactNode; className?: string; children: ReactNode }) {
+  return (
+    <section className={`dr-card ${className}`}>
+      <header className="dr-card-h">
+        <h3>{title}</h3>
+        {aside}
+      </header>
+      {children}
+    </section>
+  )
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return (
+    <div className="dr-note">
+      <Info size={16} strokeWidth={1.75} aria-hidden="true" />
+      <p className="dnote">{children}</p>
+    </div>
+  )
+}
+
 export function DriftPanel({ hidden }: { hidden: boolean }) {
   const [view, setView] = useState<View>('DRIFT')
+  const [tf, setTf] = useState<'1d' | '4h'>('1d')
   const { components, error: sysError, isPending: sysPending } = useComponents()
   const built = !!components?.backtest
-  const drift = useDrift(built)
+  const drift = useDrift(built, tf)
   const d = drift.data
   const tonePill = d?.status === 'OK' ? 'ok' : d?.status === 'WATCH' ? 'watch' : 'drift'
   return (
     <Panel
       code="DRIFT"
-      title={view === 'DRIFT' ? 'Backtest vs live' : view === 'BACKTEST' ? 'RSI divergence backtest, full history' : 'Feedback loop: how confidence is set'}
+      title={TITLE[view]}
+      description={DESCRIPTION[view]}
       hidden={hidden}
-      meta={
+      tools={
         <>
-          {view === 'DRIFT' && d && (
-            <>
-              <Pill tone={tonePill}>{d.live_trades < d.min_trades ? 'WAITING' : d.status}</Pill>
-              <span>z {signed(d.z_score)}σ</span>
-            </>
-          )}
           <Seg label="View" value={view} onChange={setView} options={VIEWS.map((v) => ({ label: v, value: v }))} />
+          {view !== 'FEEDBACK' && (
+            <Seg
+              label="Timeframe"
+              value={tf}
+              onChange={setTf}
+              options={[
+                { label: '1D', value: '1d' as const },
+                { label: '4H', value: '4h' as const },
+              ]}
+            />
+          )}
+          {view === 'DRIFT' && d && (
+            <div className="dr-status">
+              <Pill
+                tone={tonePill}
+                title="OK, WATCH or DRIFT: how far the live win rate has moved from the backtest. WAITING until enough live suggestions have finished."
+              >
+                {d.live_trades < d.min_trades ? 'WAITING' : d.status}
+              </Pill>
+              <span className="dr-z" title="Win-rate drift: how far the live win rate sits from the backtest, in standard deviations">
+                z {signed(d.z_score)}σ
+              </span>
+            </div>
+          )}
         </>
       }
     >
@@ -83,7 +156,7 @@ export function DriftPanel({ hidden }: { hidden: boolean }) {
       ) : view === 'DRIFT' ? (
         d ? <DriftView d={d} /> : <QueryState isPending={drift.isPending} error={drift.error} what="drift" />
       ) : view === 'BACKTEST' ? (
-        <BacktestView />
+        <BacktestView tf={tf} />
       ) : (
         <FeedbackView />
       )}
@@ -91,92 +164,133 @@ export function DriftPanel({ hidden }: { hidden: boolean }) {
   )
 }
 
+const Z_TICKS = ['−3', '−2', '−1', '0', '+1', '+2', '+3']
+
 function DriftView({ d }: { d: DriftReport }) {
   const waiting = d.live_trades < d.min_trades
+  const has = d.live_trades > 0
+  const vs = (live: number, expected: number) => (!has ? 'dim' : live < expected ? 'down' : 'up')
+  const status = waiting ? 'WAITING' : d.status
   return (
-    <div className="drift">
-      <div className="dstats">
-        <table>
-          <thead>
-            <tr>
-              <th />
-              <th>BACKTEST</th>
-              <th>LIVE</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Win rate</td>
-              <td>{pct(d.expected_win_rate)}</td>
-              <td className={!d.live_trades ? 'dim' : d.live_win_rate < d.expected_win_rate ? 'down' : 'up'}>{d.live_trades ? pct(d.live_win_rate) : '—'}</td>
-            </tr>
-            <tr>
-              <td>Avg R</td>
-              <td>{r(d.expected_avg_r)}</td>
-              <td className={!d.live_trades ? 'dim' : d.live_avg_r < d.expected_avg_r ? 'down' : 'up'}>{d.live_trades ? r(d.live_avg_r) : '—'}</td>
-            </tr>
-            <tr>
-              <td>Max DD</td>
-              <td>{r(d.expected_max_dd, 1)}</td>
-              <td className={!d.live_trades ? 'dim' : d.live_max_dd < d.expected_max_dd ? 'down' : 'up'}>{d.live_trades ? r(d.live_max_dd, 1) : '—'}</td>
-            </tr>
-            <tr>
-              <td>Trades</td>
-              <td className="mid">{d.backtest_trades}</td>
-              <td>{d.live_trades}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div>
-          <span className="lbl">Win-rate drift, z-score</span>
-          <div className="zgauge" role="img" aria-label={`z-score ${d.z_score.toFixed(2)}`}>
-            <div className="rail" />
-            <div className="pin" style={{ left: `calc(${Math.max(0, Math.min(100, ((d.z_score + 3) / 6) * 100))}% - 1px)` }} />
-            <div className="ticks">
-              {['−3', '−2', '−1', '0', '+1', '+2', '+3'].map((t) => (
-                <span key={t}>{t}</span>
-              ))}
+    <div className="dr-view dr-drift">
+      <StatGrid>
+        <StatCard
+          label="Drift status"
+          value={status}
+          tone={waiting ? 'dim' : d.status === 'OK' ? 'up' : d.status === 'WATCH' ? 'warn' : 'down'}
+          caption={
+            waiting
+              ? `${d.live_trades} of ${d.min_trades} live trades needed`
+              : d.status === 'OK'
+                ? 'Within the expected range'
+                : d.status === 'WATCH'
+                  ? 'Drifting, not yet at the scale-down line'
+                  : 'Beyond the scale-down line: reduce size'
+          }
+          icon={<Activity {...ico} />}
+        />
+        <StatCard
+          label="Z-score"
+          value={`${signed(d.z_score)}σ`}
+          tone={waiting ? 'dim' : d.status === 'DRIFT' ? 'down' : d.status === 'WATCH' ? 'warn' : undefined}
+          caption={`Scale down at ±${num(d.scale_down_at, 1)}σ`}
+          icon={<Sigma {...ico} />}
+          title="How far the live win rate sits from the backtest's, in standard deviations"
+        />
+        <StatCard
+          label="Live win rate"
+          value={has ? pct(d.live_win_rate) : '—'}
+          tone={vs(d.live_win_rate, d.expected_win_rate)}
+          caption={`Backtest ${pct(d.expected_win_rate)}`}
+          icon={<Target {...ico} />}
+        />
+        <StatCard
+          label="Live avg R"
+          value={has ? r(d.live_avg_r) : '—'}
+          tone={vs(d.live_avg_r, d.expected_avg_r)}
+          caption={`Backtest ${r(d.expected_avg_r)}`}
+          icon={<TrendingUp {...ico} />}
+          title="Average result per trade, in units of the risk taken"
+        />
+        <StatCard
+          label="Live max DD"
+          value={has ? r(d.live_max_dd, 1) : '—'}
+          tone={vs(d.live_max_dd, d.expected_max_dd)}
+          caption={`Backtest ${r(d.expected_max_dd, 1)}`}
+          icon={<TrendingDown {...ico} />}
+          title="Maximum drawdown: the deepest fall from a peak, in R"
+        />
+        <StatCard label="Live trades" value={d.live_trades} caption={`${d.backtest_trades} in the backtest`} icon={<Hash {...ico} />} />
+      </StatGrid>
+
+      <div className="dr-body">
+        <section className="dr-card dr-zcard">
+          <div className="dr-zgauge">
+            <span className="lbl">Win-rate drift, z-score</span>
+            <div
+              className="zgauge"
+              role="img"
+              aria-label={`z-score ${d.z_score.toFixed(2)}`}
+              title="Where the live win rate sits against the backtest, in standard deviations. Yellow: watch. Red: scale down."
+            >
+              <div className="rail" />
+              <div className="pin" style={{ left: `calc(${Math.max(0, Math.min(100, ((d.z_score + 3) / 6) * 100))}% - 1px)` }} />
+              <div className="ticks">
+                {Z_TICKS.map((t, i) => (
+                  <span key={t} style={{ left: `${(i / (Z_TICKS.length - 1)) * 100}%` }}>
+                    {t}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-        <p className="dnote">
-          {waiting ? (
-            <>
-              {d.live_trades} of the {d.min_trades} finished live suggestions needed before drift is judged. Every suggestion counts, taken or not,
-              followed with the strategy's own levels.
-            </>
-          ) : (
-            <>
-              Live win rate is <b className="hi">{num(Math.abs(d.z_score), 1)}σ</b> {d.z_score < 0 ? 'below' : 'above'} the backtest across{' '}
-              {d.live_trades} trades. {Math.abs(d.z_score) < d.scale_down_at ? 'Within the expected range.' : 'Beyond the scale-down line: reduce size.'} The
-              line is {num(d.scale_down_at, 1)}σ.
-            </>
-          )}
-        </p>
-      </div>
-      <div className="dchart">
-        {d.curve.length ? (
-          <div className="chart-wrap">
-            <div className="overlay">
+          <p className="dnote">
+            {waiting ? (
+              <>
+                {d.live_trades} of the {d.min_trades} finished live suggestions needed before drift is judged. Every suggestion counts, taken or not,
+                followed with the strategy's own levels.
+              </>
+            ) : (
+              <>
+                Live win rate is <b className="hi">{num(Math.abs(d.z_score), 1)}σ</b> {d.z_score < 0 ? 'below' : 'above'} the backtest across{' '}
+                {d.live_trades} trades. {Math.abs(d.z_score) < d.scale_down_at ? 'Within the expected range.' : 'Beyond the scale-down line: reduce size.'} The
+                line is {num(d.scale_down_at, 1)}σ.
+              </>
+            )}
+          </p>
+        </section>
+
+        <Card
+          title="Live against the backtest"
+          className="dr-chart-card"
+          aside={
+            d.curve.length ? (
               <div className="chart-keys">
                 <span>
-                  <b style={{ background: 'var(--text-2)' }} />
+                  <b className="k-muted" />
                   BACKTEST EXPECTED ±1σ
                 </span>
                 <span>
-                  <b style={{ background: 'var(--accent)' }} />
+                  <b className="k-accent" />
                   LIVE, CUMULATIVE R
                 </span>
                 <span>{d.live_trades} TRADES</span>
               </div>
+            ) : undefined
+          }
+        >
+          {d.curve.length ? (
+            <div className="dr-chart">
+              <div className="chart-wrap">
+                <DriftChart d={d} />
+              </div>
             </div>
-            <DriftChart d={d} />
-          </div>
-        ) : (
-          <Empty title="NO LIVE OUTCOMES YET">
-            <span>The curve starts when the first live suggestion reaches its target, stop or 30-bar limit.</span>
-          </Empty>
-        )}
+          ) : (
+            <Empty title="NO LIVE OUTCOMES YET">
+              <span>The curve starts when the first live suggestion reaches its target, stop or 30-bar limit.</span>
+            </Empty>
+          )}
+        </Card>
       </div>
     </div>
   )
@@ -195,9 +309,9 @@ function DriftChart({ d }: { d: DriftReport }) {
   return <Lines lines={lines} />
 }
 
-function StatsRow({ label, s }: { label: string; s: BacktestStats }) {
+function StatsRow({ label, s, className }: { label: string; s: BacktestStats; className?: string }) {
   return (
-    <tr>
+    <tr className={className}>
       <td className="l strong">{label}</td>
       <td>{s.trades}</td>
       <td>{pct(s.win_rate)}</td>
@@ -218,10 +332,13 @@ function StatsRow({ label, s }: { label: string; s: BacktestStats }) {
   )
 }
 
-function BacktestView() {
+function BacktestView({ tf }: { tf: '1d' | '4h' }) {
   const { data, isPending, error } = useBacktest(true)
   if (!data) return <QueryState isPending={isPending} error={error} what="the backtest" />
-  return <BacktestBody b={data} />
+  // 4H and 1D are backtested apart; each keeps its own pooled and per-asset results.
+  const part = data.timeframes?.[tf]
+  if (!part?.pooled?.trades) return <QueryState isPending={false} error={new Error(`No ${tf.toUpperCase()} trades in the backtest yet.`)} what="the backtest" />
+  return <BacktestBody key={tf} b={{ ...data, pooled: part.pooled, assets: part.assets }} />
 }
 
 function BacktestBody({ b }: { b: BacktestReport }) {
@@ -229,72 +346,118 @@ function BacktestBody({ b }: { b: BacktestReport }) {
   const [lines] = useState(() => [{ points: dedupe(p.equity_r ?? []), color: 'accent', title: 'POOLED R', width: 2 as const }])
   const years = Object.entries(p.by_year).sort()
   return (
-    <div className="bt">
-      <div className="pbk-tools">
-        <span className="dim">
-          {b.strategy} on daily bars, every asset's full stored history: entry at the next open, stop beyond the swing, target 2R, out after 30
-          bars, one trade at a time, costs and slippage included. Parameters are textbook, not fitted. Run {day(b.generated_at)}.
-        </span>
-      </div>
-      <div className="tbl-wrap bt-table">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th className="l">Asset</th>
-              <th>Trades</th>
-              <th>Win rate</th>
-              <th title="Average result per trade, in units of the risk taken">Avg R</th>
-              <th>Total R</th>
-              <th title="Gross wins / gross losses">Profit factor</th>
-              <th>Max DD</th>
-              <th>Long · avg</th>
-              <th>Short · avg</th>
-              <th title="Exits at target / stop / time limit">T/S/Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            <StatsRow label="ALL" s={p} />
-            {Object.entries(b.assets).map(([a, s]) => (
-              <StatsRow key={a} label={ASSET_META[a as keyof typeof ASSET_META]?.label ?? a} s={s} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="bt-bottom">
-        <div className="dchart">
-          <div className="chart-wrap">
-            <div className="overlay">
+    <div className="dr-view dr-bt">
+      <StatGrid>
+        <StatCard
+          label="Trades"
+          value={p.trades}
+          caption={`${p.by_direction.LONG.trades} long · ${p.by_direction.SHORT.trades} short`}
+          icon={<Hash {...ico} />}
+        />
+        <StatCard label="Win rate" value={pct(p.win_rate)} caption="All assets pooled" icon={<Target {...ico} />} />
+        <StatCard
+          label="Avg R"
+          value={r(p.avg_r, 3)}
+          tone={statTone(p.avg_r)}
+          caption="Per trade, in units of risk"
+          icon={<TrendingUp {...ico} />}
+          title="Average result per trade, in units of the risk taken"
+        />
+        <StatCard label="Total R" value={r(p.total_r, 1)} tone={statTone(p.total_r)} caption="Summed over every trade" icon={<ChartLine {...ico} />} />
+        <StatCard
+          label="Profit factor"
+          value={p.profit_factor === null ? '—' : num(p.profit_factor, 2)}
+          caption="Gross wins / gross losses"
+          icon={<Scale {...ico} />}
+        />
+        <StatCard
+          label="Max drawdown"
+          value={r(p.max_drawdown_r, 1)}
+          tone="down"
+          caption="Deepest fall from a peak"
+          icon={<TrendingDown {...ico} />}
+        />
+      </StatGrid>
+
+      <div className="dr-body">
+        <Note>
+          {b.strategy}. Only divergences the model scored above the alert threshold out-of-sample (it never saw what came next) are traded: entry
+          at the next open, stop at the swing extreme, target 2R, out after the timeframe's horizon, one trade at a time per asset, costs and
+          slippage included. Run {day(b.generated_at)}.
+        </Note>
+
+        <Card title="By asset">
+          <div className="tbl-wrap">
+            <table className="tbl dr-tbl">
+              <thead>
+                <tr>
+                  <th className="l">Asset</th>
+                  <th>Trades</th>
+                  <th>Win rate</th>
+                  <th title="Average result per trade, in units of the risk taken">Avg R</th>
+                  <th>Total R</th>
+                  <th title="Gross wins / gross losses">Profit factor</th>
+                  <th>Max DD</th>
+                  <th>Long · avg</th>
+                  <th>Short · avg</th>
+                  <th title="Exits at target / stop / time limit">T/S/Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                <StatsRow label="ALL" s={p} className="dr-all" />
+                {Object.entries(b.assets).map(([a, s]) => (
+                  <StatsRow key={a} label={ASSET_META[a as keyof typeof ASSET_META]?.label ?? a} s={s} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <div className="dr-bt-bottom">
+          <Card
+            title="Equity curve"
+            className="dr-chart-card"
+            aside={
               <div className="chart-keys">
                 <span>
-                  <b style={{ background: 'var(--accent)' }} />
+                  <b className="k-accent" />
                   CUMULATIVE R, ALL ASSETS
                 </span>
               </div>
+            }
+          >
+            <div className="dr-chart">
+              <div className="chart-wrap">
+                <Lines lines={lines} />
+              </div>
             </div>
-            <Lines lines={lines} />
-          </div>
-        </div>
-        <div className="tbl-wrap bt-years">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th className="l">Year</th>
-                <th>Trades</th>
-                <th>Win</th>
-                <th>R</th>
-              </tr>
-            </thead>
-            <tbody>
-              {years.map(([y, v]) => (
-                <tr key={y}>
-                  <td className="l">{y}</td>
-                  <td>{v.trades}</td>
-                  <td>{pct(v.wins / v.trades)}</td>
-                  <td className={tone(v.r)}>{r(v.r, 1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          </Card>
+          <Card title="By year" className="dr-years">
+            <div className="dr-fill">
+              <div className="tbl-wrap">
+                <table className="tbl dr-tbl">
+                  <thead>
+                    <tr>
+                      <th className="l">Year</th>
+                      <th>Trades</th>
+                      <th>Win</th>
+                      <th>R</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {years.map(([y, v]) => (
+                      <tr key={y}>
+                        <td className="l">{y}</td>
+                        <td>{v.trades}</td>
+                        <td>{pct(v.wins / v.trades)}</td>
+                        <td className={tone(v.r)}>{r(v.r, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     </div>
@@ -329,87 +492,105 @@ function FeedbackBody({ c }: { c: CalibrationReport }) {
   const o = c.out_of_sample
   const maxW = Math.max(...(c.weights ?? []).map((w) => Math.abs(w.weight)), 1e-9)
   return (
-    <div className="fb">
-      <div className="jbar">
-        <div>
-          <span className="lbl">Learned from</span>
-          <span className="v">
-            {c.n_backtest} backtest + {c.n_live} live
-          </span>
-        </div>
-        <div>
-          <span className="lbl">Plain win rate</span>
-          <span className="v">{pct(c.base_win_rate)}</span>
-        </div>
-        <div title="Brier score on years the model hadn't seen (lower is better) vs always predicting the plain win rate">
-          <span className="lbl">Out-of-sample Brier</span>
-          <span className="v">{o ? `${num(o.brier, 4)} vs ${num(o.brier_base_rate, 4)}` : '—'}</span>
-        </div>
-        <div>
-          <span className="lbl">AUC</span>
-          <span className="v">{o?.auc == null ? '—' : num(o.auc, 2)}</span>
-        </div>
-        <div>
-          <span className="lbl">Sets confidence?</span>
-          <span className={`v ${c.skill ? 'up' : 'warn'}`}>{c.skill ? 'YES' : 'NOT YET'}</span>
-        </div>
-      </div>
-      <p className="dnote fb-note">
-        {c.skill
-          ? 'The model beat the plain win rate on years it had not seen, so each suggestion’s confidence is its estimated chance of winning.'
-          : `The model has not beaten the plain win rate on years it had not seen, so every suggestion gets the plain win rate (${pct(c.base_win_rate)}) as confidence. It retrains on every analysis run with each new live outcome counted 3×, and takes over if it starts to beat that.`}
-        {c.note ? ` ${c.note}` : ''} Trained {day(c.trained_at)}.
-      </p>
-      <div className="fb-grid">
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th className="l" title="Out-of-sample predictions, in fifths">Predicted</th>
-                <th>Actually won</th>
-                <th>Trades</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(o?.buckets ?? []).map((b) => (
-                <tr key={b.predicted}>
-                  <td className="l">{pct(b.predicted)}</td>
-                  <td className={Math.abs(b.actual - b.predicted) < 0.08 ? 'up' : 'warn'}>{pct(b.actual)}</td>
-                  <td className="mid">{b.n}</td>
-                </tr>
-              ))}
-              {!o && (
-                <tr>
-                  <td colSpan={3} className="l dim empty-row">
-                    Not enough history for an out-of-sample check yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th className="l">What the model looks at</th>
-                <th className="l" title="Standardised weight: right = more likely to win">Effect on P(win)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(c.weights ?? []).map((w) => (
-                <tr key={w.feature}>
-                  <td className="l">{FEATURE[w.feature] ?? w.feature}</td>
-                  <td className="l">
-                    <span className="wbar">
-                      <i className={w.weight > 0 ? 'pos' : 'neg'} style={{ width: `${(Math.abs(w.weight) / maxW) * 50}%` }} />
-                    </span>
-                    <span className={w.weight > 0 ? 'up' : 'down'}>{signed(w.weight, 2)}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="dr-view dr-fb">
+      <StatGrid>
+        <StatCard
+          label="Learned from"
+          value={c.n_backtest + c.n_live}
+          caption={`${c.n_backtest} graded by the market + ${c.n_live} labelled by you`}
+          icon={<Database {...ico} />}
+        />
+        <StatCard label="Plain rate" value={pct(c.base_win_rate)} caption="Share of divergences that worked: the baseline to beat" icon={<Percent {...ico} />} />
+        <StatCard
+          label="Out-of-sample Brier"
+          value={o ? num(o.brier, 4) : '—'}
+          caption={o ? `vs ${num(o.brier_base_rate, 4)} for the plain win rate; lower is better` : 'No out-of-sample check yet'}
+          icon={<Gauge {...ico} />}
+          title="Brier score on years the model hadn't seen (lower is better) vs always predicting the plain win rate"
+        />
+        <StatCard
+          label="AUC"
+          value={o?.auc == null ? '—' : num(o.auc, 2)}
+          caption="Out of sample; 0.5 is a coin flip"
+          icon={<Radar {...ico} />}
+          title="How well the model ranks winners above losers on years it hadn't seen"
+        />
+        <StatCard
+          label="Sets confidence?"
+          value={c.skill ? 'YES' : 'NOT YET'}
+          tone={c.skill ? 'up' : 'warn'}
+          caption={c.skill ? 'Beat the plain rate on later data it hadn’t seen' : 'Scores shown as unproven until it does'}
+          icon={c.skill ? <ShieldCheck {...ico} /> : <ShieldAlert {...ico} />}
+        />
+      </StatGrid>
+
+      <div className="dr-body">
+        <Note>
+          {c.skill
+            ? 'The model beat the plain rate on later divergences it had not seen, so its scores are trusted.'
+            : `The model has not yet beaten the plain rate (${pct(c.base_win_rate)} of divergences worked) on later divergences it had not seen, so every score is shown as unproven. It retrains every hour on everything the market has graded plus your ✓/✗ (each counted 5×).`}
+          {c.note ? ` ${c.note}` : ''} Trained {day(c.trained_at)}.
+        </Note>
+
+        <div className="dr-fb-grid">
+          <Card title="Calibration, out of sample">
+            <div className="tbl-wrap">
+              <table className="tbl dr-tbl">
+                <thead>
+                  <tr>
+                    <th className="l" title="Out-of-sample predictions, in fifths">
+                      Predicted
+                    </th>
+                    <th>Actually won</th>
+                    <th>Trades</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(o?.buckets ?? []).map((b) => (
+                    <tr key={b.predicted}>
+                      <td className="l">{pct(b.predicted)}</td>
+                      <td className={Math.abs(b.actual - b.predicted) < 0.08 ? 'up' : 'warn'}>{pct(b.actual)}</td>
+                      <td className="mid">{b.n}</td>
+                    </tr>
+                  ))}
+                  {!o && (
+                    <tr>
+                      <td colSpan={3} className="l dim empty-row">
+                        Not enough history for an out-of-sample check yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <Card title="Model weights">
+            <div className="tbl-wrap">
+              <table className="tbl dr-tbl">
+                <thead>
+                  <tr>
+                    <th className="l">What the model looks at</th>
+                    <th className="l" title="Standardised weight: right = more likely to win">
+                      Effect on P(win)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(c.weights ?? []).map((w) => (
+                    <tr key={w.feature}>
+                      <td className="l">{FEATURE[w.feature] ?? w.feature}</td>
+                      <td className="l">
+                        <span className="wbar">
+                          <i className={w.weight > 0 ? 'pos' : 'neg'} style={{ width: `${(Math.abs(w.weight) / maxW) * 50}%` }} />
+                        </span>
+                        <span className={w.weight > 0 ? 'up' : 'down'}>{signed(w.weight, 2)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </div>
       </div>
     </div>

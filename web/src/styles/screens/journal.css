@@ -1,0 +1,75 @@
+/* Journal (JRNL): panels/JournalPanel.tsx. Loaded after app.css, so rules here refine the shared ones. */
+
+.jr-count { margin-left: auto; font: 500 12px/1 var(--ui); color: var(--text-3); }
+
+/* Stats on top; the table card takes the rest of the height and scrolls under its own sticky header. */
+.jr { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.jr > .empty, .jr > .loading { flex: none; }
+.p-JRNL .stats { flex: none; padding: 16px 18px 14px; gap: 12px; }
+.p-JRNL .stat { border-radius: var(--r); }
+
+.jr-card {
+  flex: 0 1 auto; min-height: 180px; margin: 0 18px 18px; overflow: auto;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+}
+
+/* table */
+.jr-tbl th { padding: 0; background: var(--panel-2); border-bottom-color: var(--line); }
+.jr-tbl th:not(.sort) { padding: 12px 14px; }
+.jr-tbl td { padding: 11px 14px; font-size: 13px; }
+.jr-tbl th:first-child:not(.sort), .jr-tbl td:first-child { padding-left: 18px; }
+.jr-tbl th:last-child:not(.sort), .jr-tbl td:last-child { padding-right: 18px; }
+.jr-tbl tbody tr:last-child td { border-bottom: 0; }
+.jr-tbl td.note { min-width: 220px; max-width: 420px; }
+/* expired rows recede a step; the direction keeps its up/down colour */
+.jr-tbl tr.expired td:not(.up):not(.down) { color: var(--text-2); }
+
+.jr-sort {
+  display: inline-flex; align-items: center; gap: 4px; width: 100%; padding: 12px 14px; border: 0; background: transparent;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+}
+th.l .jr-sort { justify-content: flex-start; }
+th:not(.l) .jr-sort { justify-content: flex-end; }
+.jr-tbl th:first-child .jr-sort { padding-left: 18px; }
+.jr-tbl .jr-sort .ar { flex: none; color: var(--text-3); opacity: 0.6; }
+.jr-tbl .jr-sort:hover .ar { opacity: 1; }
+.jr-sort.on { color: var(--text); }
+.jr-tbl .jr-sort.on .ar { color: var(--accent); opacity: 1; }
+
+.jr-dir { display: inline-flex; align-items: center; gap: 3px; font: 600 11px/1 var(--ui); letter-spacing: 0.06em; }
+.jr-exit { text-transform: capitalize; }
+
+/* decision badges: outline + wash, same colours as before */
+.p-JRNL .dec {
+  display: inline-block; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--panel-2);
+}
+.p-JRNL .dec.TAKEN { border-color: transparent; background: var(--up-wash); }
+.p-JRNL .dec.MODIFIED { border-color: var(--accent-lo); background: var(--accent-wash); }
+.p-JRNL .dec.EXPIRED { border-style: dashed; background: transparent; }
+
+.jr-open {
+  display: inline-block; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 6px;
+  font: 700 10px/1 var(--ui); letter-spacing: 0.1em; color: var(--accent);
+}
+
+/* empty states inside the card */
+.jr-empty { justify-items: center; align-content: center; gap: 8px; min-height: 176px; padding: 36px 20px; text-align: center; }
+.jr-empty .jr-empty-ico {
+  box-sizing: content-box; padding: 9px; margin-bottom: 4px; border-radius: 10px; background: var(--panel-3); color: var(--text-2);
+}
+.jr-empty span { max-width: 52ch; }
+.jr-empty .act { margin-top: 6px; }
+
+@media (max-width: 860px) {
+  .jr { height: auto; }
+  .jr-card { min-height: 0; margin: 0 12px 12px; }
+  .p-JRNL .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; }
+  .p-JRNL .stat { padding: 12px; gap: 10px; }
+  .p-JRNL .stat:last-child { grid-column: 1 / -1; }
+  .p-JRNL .stat-ico { width: 30px; height: 30px; }
+  .p-JRNL .stat-v { font-size: 18px; }
+}
+@media (max-width: 520px) {
+  .p-JRNL .ptools .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .p-JRNL .ptools .seg button { padding: 8px 4px; }
+}

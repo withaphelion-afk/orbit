@@ -2,8 +2,9 @@
 
 Started by the web "Run analysis" button or the runner's daily schedule (see
 jobs.py). Steps: refresh data (optional), compute exact transit moments,
-rebuild the playbook (daily + hourly), backtest the strategy, retrain the
-feedback loop (calibrate.py) on backtest + live outcomes, re-check the Vedic
+rebuild the playbook (daily + hourly), record upcoming projections and grade
+elapsed ones (projection_log.py), backtest the strategy, retrain the
+divergence model (strategy/divergence_model.py) with its walk-forward check, re-check the Vedic
 model, optionally the placebo check, then record what changed. Progress and log lines go to the run's record file,
 which the API serves to the UI.
 """
@@ -42,26 +43,61 @@ def _changes(before: dict[Asset, dict], after: dict[Asset, dict]) -> list[LabelC
     return [c for c in out if c.before is not None]
 
 
+def _projections(rep: Reporter, events, built: list[Asset]) -> dict:
+    """Record this run's projections in the forward track record and grade the ones
+    whose windows have closed. Returns summary fields."""
+    from datetime import datetime, timezone
+
+    from orbit.core.types import AssetPlaybook
+    from orbit.analysis import projection_log
+    from orbit.analysis.exceptions import regime_per_bar
+    from orbit.analysis.playbook import _regime_context
+    from orbit.analysis.projections import build_projections, current_conditions
+    from orbit.analysis.series import load_price_series
+
+    now = datetime.now(timezone.utc)
+    playbooks, conditions = {}, {}
+    for asset in built:
+        path = ANALYSIS_DIR / f"{asset.value}.json"
+        if not path.exists():
+            continue
+        playbooks[asset] = AssetPlaybook.model_validate_json(path.read_text(encoding="utf-8"))
+        series = load_price_series(asset)
+        regimes = regime_per_bar(series, _regime_context(asset, series)[0]) if len(series) else []
+        conditions[asset] = current_conditions(series, next((r for r in reversed(regimes) if r), None))
+    rows = build_projections(events, playbooks, now, conditions=conditions)
+    added = projection_log.record(rows, now)
+    graded = projection_log.grade(now)
+    hits = sum(1 for r in graded if r.hit)
+    scored = sum(1 for r in graded if r.hit is not None)
+    rep.log(f"Projections: {len(rows)} in the next 60 days, {added} newly recorded; {scored} graded this run ({hits} hits)")
+    return {"upcoming": len(rows), "recorded": added, "graded": scored, "hits": hits}
+
+
 def _strategy_and_model(rep: Reporter, events, start: float, end: float) -> dict:
     """Backtest, feedback-loop retrain, live refresh, Vedic model. Returns summary fields."""
     from orbit.analysis import model
     from orbit.analysis.series import load_price_series
     from orbit.backtest.engine import run_all
-    from orbit.strategy import calibrate, live
+    from orbit.strategy import divergence_model, live
     from orbit.vedic.states import build_states
 
     series = {a: load_price_series(a) for a in ALL_ASSETS}
-    rep.step("Backtesting RSI divergence", start)
-    bt = run_all(series)["pooled"]
-    rep.log(f"Backtest: {bt.get('trades', 0)} trades, win rate {bt.get('win_rate', 0):.1%}, avg {bt.get('avg_r', 0):+.3f}R")
-    rep.step("Retraining the feedback loop", start + 0.02)
-    cal = calibrate.train()
+    rep.step("Training the divergence model (1H, 4H, 1D, 1W)", start)
+    rows = divergence_model.build()
+    cal = divergence_model.train(rows)
     oos = cal.get("out_of_sample") or {}
     rep.log(
-        f"Feedback loop: {cal['n_backtest']} backtest + {cal['n_live']} live outcomes; "
-        + (f"out-of-sample Brier {oos['brier']:.4f} vs {oos['brier_base_rate']:.4f} plain win rate ({'skill' if cal['skill'] else 'no skill: confidence = plain win rate'})" if oos else cal.get("note", ""))
+        f"Divergence model: {cal['n_market']} graded + {cal['n_user']} of yours; "
+        + (f"out-of-sample Brier {oos['brier']:.4f} vs {oos['brier_base_rate']:.4f} plain rate ({'trusted' if cal['trusted'] else 'unproven'})" if oos else cal.get("note", ""))
     )
-    counts = live.refresh(series)
+    rep.step("Backtesting the divergence strategy (4H, 1D)", start + 0.02)
+    report = run_all(cal, rows)
+    for tf, r in report["timeframes"].items():
+        bt = r["pooled"]
+        rep.log(f"Backtest {tf}: {bt.get('trades', 0)} trades, win rate {bt.get('win_rate', 0):.1%}, avg {bt.get('avg_r', 0):+.3f}R")
+    bt = report["pooled"]
+    counts = live.refresh()
     rep.log(f"Suggestions: {counts['new']} new, {counts['expired']} expired, {counts['resolved']} outcomes resolved")
     states = build_states(events=events)
     verdicts = {}
@@ -74,7 +110,7 @@ def _strategy_and_model(rep: Reporter, events, start: float, end: float) -> dict
         rep.log(f"Vedic model {asset.value}: " + (f"adds skill on {', '.join(skilled)}" if skilled else "no added skill on any target"))
     return {
         "backtest": {k: bt.get(k) for k in ("trades", "win_rate", "avg_r", "profit_factor", "max_drawdown_r")},
-        "calibration_skill": cal["skill"],
+        "calibration_skill": cal["trusted"],
         "suggestions": counts,
         "model_verdicts": verdicts,
     }
@@ -102,6 +138,14 @@ def main(job_id: str) -> None:
             "tests_by_family": meta.tests_by_family,
             "assets": meta.assets,
         }
+        rep.step("Recording and grading projections", span[1])
+        try:
+            built = [a for a in ALL_ASSETS if "skipped" not in meta.assets.get(a.value, {"skipped": True})]
+            summary["projections"] = _projections(rep, events, built)
+        except Exception as exc:
+            # The track record is a side product: losing one day of it must not lose the run.
+            rep.log(f"Projections skipped this run: {type(exc).__name__}: {exc}")
+            rep.log(traceback.format_exc())
         summary.update(_strategy_and_model(rep, events, span[1], 0.62 if run.include_placebo else 0.97))
         if run.include_placebo:
             from orbit.analysis.placebo import run_placebo

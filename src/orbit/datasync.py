@@ -16,6 +16,7 @@ each machine's own runner and analysis run from these:
     ephemeris_cache/de421.bsp        NASA JPL's ephemeris kernel
     analysis/placebo.json            the latest placebo check (40 minutes to rerun)
     journal/suggestions.json         your decisions and notes, only if DATA_SYNC_JOURNAL is on
+    journal/divergence_labels.json   your ✓ real / ✗ not real on divergences, likewise
 
 How it works: the `data` branch is checked out as a git worktree in
 .orbit-sync/ (ignored by the main branch). A sync fetches the branch, merges it
@@ -529,6 +530,19 @@ class _Merge:
             self.warning = f"{conflicts} suggestion(s) were decided differently on two machines; the first decision stands and the other is kept with it."
         self._take(rel, data, to_local=merged != (a or []), to_shared=merged != (b or []))
 
+    def divergence_labels(self) -> None:
+        """Your ✓/✗ on divergences: joined by divergence, the later label wins."""
+        rel = "journal/divergence_labels.json"
+        a, b = _read_json(self.local / rel), _read_json(self.shared / rel)
+        if a is None and b is None:
+            return
+        merged: dict[str, dict] = {}
+        for rec in [*(b or []), *(a or [])]:
+            if rec.get("id") and (rec["id"] not in merged or (rec.get("at") or "") > (merged[rec["id"]].get("at") or "")):
+                merged[rec["id"]] = rec
+        out = sorted(merged.values(), key=lambda r: (r.get("at") or "", r["id"]))
+        self._take(rel, json.dumps(out, indent=1).encode("utf-8"), to_local=out != (a or []), to_shared=out != (b or []))
+
     def run(self) -> None:
         winners = self.prices()
         self.report(winners)
@@ -539,6 +553,7 @@ class _Merge:
 
             with store.locked():
                 self.journal()
+                self.divergence_labels()
 
 
 # ---------------------------------------------------------------- sync

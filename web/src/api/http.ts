@@ -4,18 +4,25 @@
  * elsewhere.
  */
 import type {
+  AlertItem,
   AnalysisRun,
   Asset,
   BacktestReport,
+  BarRow,
   CalibrationReport,
   Candle,
   DecisionRequest,
+  DivergenceLabelRequest,
+  DivergenceModel,
+  DivergenceSet,
   DriftReport,
   JournalRow,
   ModelReport,
   PatternResult,
   PlaybookOverview,
   PlaybookView,
+  ProjectionTrack,
+  ProjectionView,
   Quote,
   RegimeReading,
   ScheduleView,
@@ -24,6 +31,7 @@ import type {
   SuggestionView,
   SystemStatus,
   Tick,
+  Timeframe,
   TransitView,
 } from './types'
 
@@ -78,14 +86,21 @@ export function createApi(base = '', fetcher: typeof fetch = (...a) => fetch(...
     pattern: (a: Asset, id: string) => get<PatternResult>(`/api/playbook/${a}/patterns/${enc(id)}`),
     suggestions: () => get<SuggestionView[]>('/api/suggestions'),
     journal: () => get<JournalRow[]>('/api/journal'),
-    drift: () => get<DriftReport>('/api/drift'),
+    drift: (tf: Timeframe = '1d') => get<DriftReport>(`/api/drift?timeframe=${tf}`),
     backtest: () => get<BacktestReport>('/api/backtest'),
+    bars: (a: Asset, tf: Timeframe) => get<BarRow[]>(`/api/bars/${a}?timeframe=${tf}`),
+    divergences: (a: Asset) => get<DivergenceSet>(`/api/divergences/${a}`),
+    divergenceModel: () => get<DivergenceModel>('/api/divergences/model'),
+    alerts: () => get<AlertItem[]>('/api/alerts'),
     calibration: () => get<CalibrationReport>('/api/calibration'),
     model: (a: Asset) => get<ModelReport>(`/api/model/${a}`),
     system: () => get<SystemStatus>('/api/system'),
     runs: () => get<AnalysisRun[]>('/api/analysis/runs'),
     currentRun: () => get<AnalysisRun | null>('/api/analysis/runs/current'),
     schedule: () => get<ScheduleView>('/api/analysis/schedule'),
+    projections: (days: number, includeNone: boolean) =>
+      get<ProjectionView[]>(`/api/projections?days=${days}${includeNone ? '&include_none=true' : ''}`),
+    projectionTrack: () => get<ProjectionTrack>('/api/projections/track'),
     intraday: (a: Asset, at: string, beforeHours: number, afterHours: number) =>
       get<Candle[]>(`/api/intraday/${a}?at=${enc(at)}&before_hours=${beforeHours}&after_hours=${afterHours}`),
     async startRun(opts: { placebo: boolean; refresh: boolean }): Promise<AnalysisRun> {
@@ -95,6 +110,14 @@ export function createApi(base = '', fetcher: typeof fetch = (...a) => fetch(...
         body: JSON.stringify(opts),
       })
       return parse<AnalysisRun>(res, 'POST run')
+    },
+    async labelDivergence(req: DivergenceLabelRequest): Promise<void> {
+      const res = await fetcher(`${base}/api/divergences/label`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(req),
+      })
+      await parse<unknown>(res, 'POST label')
     },
     async decide(id: string, req: DecisionRequest): Promise<JournalRow> {
       const res = await fetcher(`${base}/api/suggestions/${enc(id)}/decision`, {
