@@ -65,7 +65,7 @@ from orbit.analysis.outcomes import BIG_DOWN, BIG_UP, CODE_TO_OUTCOME, SIDEWAYS,
 from orbit.analysis.patterns import Pattern, build_patterns
 from orbit.analysis.series import PriceSeries, day64, load_price_series
 from orbit.analysis.sideways import state_masks, test_states
-from orbit.analysis.significance import Spectrum, benjamini_hochberg, hypergeom_sf, shift_null_counts, shift_p_value
+from orbit.analysis.significance import Spectrum, benjamini_hochberg, hypergeom_sf, romano_wolf, shift_null_counts, shift_p_value
 from orbit.vedic.events import load_events as load_vedic_events
 from orbit.vedic.states import States, build_states
 
@@ -123,9 +123,34 @@ def _target(o: HorizonOutcomes, code: int) -> tuple[np.ndarray, Spectrum]:
     return y, Spectrum(y)
 
 
-def _horizon_tests(outcomes, targets, bars, horizons, cls, field, min_gap):
+def _neighbour_horizons(h: int) -> list[int]:
+    """The horizons next to h that a real effect should also show up at: h-1, h+1, and h+-2 when h is long."""
+    offsets = (-2, -1, 1, 2) if h >= 20 else (-1, 1)
+    return [h + d for d in offsets if h + d >= 1]
+
+
+def _neighbour_support(neigh: dict, h: int, bars: np.ndarray, target: int, rate: float, base: float) -> float | None:
+    """Share of h's neighbours where `target` moves from its base rate in the same direction, by at least half as much."""
+    effect = rate - base
+    if effect == 0:
+        return None
+    seen = supported = 0
+    for hn in _neighbour_horizons(h):
+        o = neigh.get(hn)
+        if o is None:
+            continue
+        rel = bars[(bars >= o.start) & (bars < o.end)] - o.start
+        if not len(rel):
+            continue
+        seen += 1
+        e = float(np.mean(o.valid_codes[rel] == target)) - o.base_rate(target)
+        supported += e / effect >= 0.5
+    return supported / seen if seen else None
+
+
+def _horizon_tests(outcomes, targets, bars, horizons, cls, field, min_gap, neigh=None):
     """Stats per horizon and, where there are enough occurrences, one-sided
-    circular-shift tests of each target. Returns (stats, [(horizon, target, p)])."""
+    circular-shift tests of each target. Returns (stats, [(horizon, target, p, hits, null counts)])."""
     stats, tests = [], []
     for h in horizons:
         o = outcomes[h]
@@ -140,12 +165,17 @@ def _horizon_tests(outcomes, targets, bars, horizons, cls, field, min_gap):
             for t in TARGETS:
                 y, y_spec = targets[h][t]
                 hits = int(y[rel].sum())
-                pval = shift_p_value(hits, shift_null_counts(y_spec, ind_spec, min_gap))
+                null = shift_null_counts(y_spec, ind_spec, min_gap)
+                pval = shift_p_value(hits, null)
                 setattr(stat, f"p_{TARGETS[t]}", pval)
-                tests.append((h, t, pval))
+                tests.append((h, t, pval, hits, null.astype(np.int16)))
                 pu = hypergeom_sf(hits, L, int(y.sum()), stat.n)
                 best_uniform = pu if best_uniform is None else min(best_uniform, pu)
             stat.p_uniform_best = best_uniform
+            if neigh:
+                t = min(TARGETS, key=lambda tt: getattr(stat, f"p_{TARGETS[tt]}"))
+                rate, base = _rate(stat, t)
+                stat.neighbour_support = _neighbour_support(neigh, h, bars, t, rate, base)
         stats.append(stat)
     return stats, tests
 
@@ -220,22 +250,25 @@ def build_asset_playbook(asset, series, patterns, events, states: States, now, h
     results: dict[str, PatternResult] = {}
     indexed: dict[str, list[tuple[TransitEvent, int]]] = {}
     hourly_indexed: dict[str, list[tuple[TransitEvent, int]]] = {}
-    tests: list[tuple[str, str, str, int, int, float]] = []  # (family, pattern_id, kind, horizon, target, p)
+    tests: list[tuple] = []  # (family, pattern_id, kind, horizon, target, p, hits, null counts)
+    daily_horizons = sorted({h for hs in PLAYBOOK_HORIZONS.values() for h in hs})
+    neigh = {hn: label_outcomes(series, hn) for hn in {n for h in daily_horizons for n in _neighbour_horizons(h)} - set(outcomes)}
+    neigh |= outcomes
 
     for p in patterns:
         pairs = _pattern_indices(p, series)
         indexed[p.pattern_id] = pairs
         stats, found = _horizon_tests(outcomes, targets, np.array([i for _, i in pairs], dtype=int),
-                                      PLAYBOOK_HORIZONS[p.speed_class.value], PatternHorizonStat, "horizon_days", MIN_SHIFT_GAP_DAYS)
+                                      PLAYBOOK_HORIZONS[p.speed_class.value], PatternHorizonStat, "horizon_days", MIN_SHIFT_GAP_DAYS, neigh)
         family = f"{asset.value}:{p.family_key}"
-        tests += [(family, p.pattern_id, "daily", h, t, pv) for h, t, pv in found]
+        tests += [(family, p.pattern_id, "daily", h, t, *rest) for h, t, *rest in found]
         timing_stats = []
         if ctx is not None:
             hpairs = timing.event_bars(ctx, p.events)
             hourly_indexed[p.pattern_id] = hpairs
             timing_stats, found = _horizon_tests(ctx.outcomes, ctx.targets, np.array([i for _, i in hpairs], dtype=int),
                                                  TIMING_HORIZONS_HOURS, TimingHorizonStat, "horizon_hours", TIMING_MIN_SHIFT_GAP_HOURS)
-            tests += [(f"{asset.value}:TIMING", p.pattern_id, "timing", h, t, pv) for h, t, pv in found]
+            tests += [(f"{asset.value}:TIMING", p.pattern_id, "timing", h, t, *rest) for h, t, *rest in found]
         results[p.pattern_id] = PatternResult(
             pattern_id=p.pattern_id, description=p.description, planet=p.planet, event_type=p.event_type,
             sign=p.sign, speed_class=p.speed_class, family=family, n_events=len(pairs), horizons=stats,
@@ -246,14 +279,20 @@ def build_asset_playbook(asset, series, patterns, events, states: States, now, h
     families: dict[str, list[int]] = {}
     for k, t in enumerate(tests):
         families.setdefault(t[0], []).append(k)
+    def stat_of(k):
+        _, pid, kind, h, *_ = tests[k]
+        if kind == "daily":
+            return next(s for s in results[pid].horizons if s.horizon_days == h)
+        return next(s for s in results[pid].timing if s.horizon_hours == h)
+
     for ks in families.values():
         for k, q in zip(ks, benjamini_hochberg([tests[k][5] for k in ks])):
-            _, pid, kind, h, t, _ = tests[k]
-            if kind == "daily":
-                stat = next(s for s in results[pid].horizons if s.horizon_days == h)
-            else:
-                stat = next(s for s in results[pid].timing if s.horizon_hours == h)
-            setattr(stat, f"q_{TARGETS[t]}", q)
+            setattr(stat_of(k), f"q_{TARGETS[tests[k][4]]}", q)
+        # Romano-Wolf alongside, as a comparison column: it controls the chance of ANY false discovery.
+        for k, rw in zip(ks, romano_wolf([tests[k][6] for k in ks], [tests[k][7] for k in ks])):
+            setattr(stat_of(k), f"rw_{TARGETS[tests[k][4]]}", rw)
+        for k in ks:
+            tests[k] = tests[k][:6]  # the null counts are big; drop them once used
 
     atr_fraction = _daily_atr_fraction(series)
     for p in patterns:
@@ -429,7 +468,18 @@ def build_all(
             labels[r.label.value] = labels.get(r.label.value, 0) + 1
             if r.timing:
                 timing_labels[r.timing_label.value] = timing_labels.get(r.timing_label.value, 0) + 1
+        stats = [s for r in playbook.patterns for s in (*r.horizons, *r.timing)]
+        bh = sum(getattr(s, f"q_{n}") is not None and getattr(s, f"q_{n}") <= FDR_STRONG for s in stats for n in TARGETS.values())
+        rw = sum(getattr(s, f"rw_{n}") is not None and getattr(s, f"rw_{n}") <= FDR_STRONG for s in stats for n in TARGETS.values())
+        flagged = sum(
+            r.label in (ConfidenceLabel.STRONG, ConfidenceLabel.MODERATE)
+            and any(s.horizon_days == r.headline_horizon and s.neighbour_support == 0 for s in r.horizons)
+            for r in playbook.patterns
+        )
         asset_meta[asset.value] = {
+            "tests_bh_significant": bh,
+            "tests_romano_wolf_significant": rw,
+            "labelled_but_no_neighbour_support": flagged,
             "history_start": playbook.history_start.date().isoformat(),
             "history_end": playbook.history_end.date().isoformat(),
             "bars": playbook.bars,

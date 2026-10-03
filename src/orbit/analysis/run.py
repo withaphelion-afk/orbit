@@ -128,6 +128,9 @@ def main(job_id: str) -> None:
             fetch_all_prices()
             rep.step("Refreshing ephemeris", 0.08)
             fetch_all_ephemeris()
+        from orbit.data.pipeline import verify_prices
+
+        verify_prices()  # holes in the price series would shift every window; stop here instead
         rep.step("Computing exact transit moments", 0.12)
         events = load_events()
         span = (0.14, 0.40) if run.include_placebo else (0.14, 0.55)

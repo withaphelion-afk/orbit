@@ -162,3 +162,30 @@ def test_path_metrics_times_the_move_from_the_exact_moment():
     assert m["hours_to_move"] == 7  # bar 82 is the first +3% (1.01^3 - 1 ≈ 3.03%)
     assert m["hours_to_peak"] == 14  # the rally tops out at bar 89
     assert m["peak_return"] == pytest.approx(1.01**10 - 1)
+
+
+def test_romano_wolf_is_never_looser_than_the_raw_p_and_keeps_order():
+    import numpy as np
+
+    from orbit.analysis.significance import romano_wolf, shift_p_value
+
+    rng = np.random.default_rng(1)
+    nulls = [rng.poisson(20, 400) for _ in range(6)]
+    observed = [45, 24, 20, 19, 22, 30]  # one clear effect, one mild, the rest noise
+    adj = romano_wolf(observed, nulls)
+    raw = [shift_p_value(o, n) for o, n in zip(observed, nulls)]
+    assert all(a >= r - 1e-12 for a, r in zip(adj, raw))
+    assert adj[0] == min(adj) and adj[0] < 0.05
+    assert all(a > 0.05 for a in adj[2:4])
+
+
+def test_romano_wolf_standardises_unlike_tests():
+    import numpy as np
+
+    from orbit.analysis.significance import romano_wolf
+
+    rng = np.random.default_rng(2)
+    small = rng.poisson(3, 500)  # rare target: counts tiny
+    big = rng.poisson(200, 500)  # common target: counts huge, and noisier in absolute terms
+    adj = romano_wolf([12, 205], [small, big])
+    assert adj[0] < 0.05 < adj[1]  # 12 vs mean 3 is a real effect; 205 vs mean 200 is noise

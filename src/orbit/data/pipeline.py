@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 from orbit.core.types import Asset
+from orbit.data.gaps import assert_no_gaps
 from orbit.data.history import TIMEFRAMES, update_history
+from orbit.data.storage import load_candles
 
 ALL_ASSETS = [Asset.BTC, Asset.ETH, Asset.SOL, Asset.SILVER]
 
@@ -23,6 +25,15 @@ def fetch_all_prices() -> dict[str, dict | None]:
             _, report = update_history(asset, timeframe)
             reports[f"{asset.value} {timeframe}"] = report
     return reports
+
+
+def verify_prices() -> None:
+    """Raise DataGapError if any stored series has holes the market doesn't explain."""
+    for asset in ALL_ASSETS:
+        for timeframe in TIMEFRAMES:
+            candles = load_candles(asset, timeframe)
+            if candles:
+                assert_no_gaps(asset, timeframe, candles)
 
 
 def fetch_all_ephemeris() -> int:

@@ -229,6 +229,13 @@ class HorizonStatBase(BaseModel):
     q_sideways: float | None = None
     # Secondary check against uniformly random dates (reported, not FDR-corrected).
     p_uniform_best: float | None = None
+    # Romano-Wolf step-down p-values (family-wise error; stricter than FDR). A comparison column, not used for labels.
+    rw_big_up: float | None = None
+    rw_big_down: float | None = None
+    rw_sideways: float | None = None
+    # Diagnostic: share of the neighbouring horizons (h-1, h+1, and h+-2 for long ones) showing the same
+    # direction of effect for this stat's best target. None when it could not be assessed. Not used for labels.
+    neighbour_support: float | None = None
 
 
 class PatternHorizonStat(HorizonStatBase):

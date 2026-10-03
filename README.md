@@ -278,6 +278,8 @@ In plain words: on 1D the learned selection is about break-even after costs. Lon
 - **Significance:**
   - Each hit rate is compared with the whole event calendar shifted circularly against prices (via FFT, with a fitted negative-binomial tail).
   - Benjamini-Hochberg FDR correction runs per asset.
+  - Alongside it, every test gets a Romano-Wolf (family-wise) p-value as a comparison column, and a diagnostic `neighbour_support` (does the effect also show at the horizons next to it?). Neither changes a label yet; the run's meta counts how many tests each would change.
+  - Before an analysis run, stored prices are checked for holes (`data/gaps.py`): crypto has none to spare, silver's weekends and holidays are expected. A hole beyond the tolerance stops the run instead of shifting every window.
   - Patterns with fewer than 12 occurrences are never tested.
   - The hypotheses are written down before any test runs.
 - **Labels:** strong (q ≤ 0.05, 25+ occurrences, 1.5× the base rate), moderate (q ≤ 0.10), weak (nominal p < 0.05 only).
