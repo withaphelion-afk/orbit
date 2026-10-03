@@ -1,0 +1,80 @@
+name: label
+# The web terminal finds its own labels by this name.
+run-name: label ${{ inputs.verdict }} ${{ inputs.asset }} ${{ inputs.timeframe }} ${{ inputs.t2 }}
+
+# ✓ real / ✗ not real on a divergence, from the static web terminal: save it in
+# the private data repo (journal/divergence_labels.json), where the next runner
+# cycle trains on it, then republish the terminal's data.
+on:
+  workflow_dispatch:
+    inputs:
+      asset:
+        type: choice
+        options: [BTC, ETH, SOL, SILVER]
+      timeframe:
+        type: choice
+        options: ["1h", "4h", "1d", "1w"]
+      t1:
+        description: First swing's bar time (epoch seconds)
+        type: string
+        required: true
+      t2:
+        description: Second swing's bar time (epoch seconds)
+        type: string
+        required: true
+      direction:
+        type: choice
+        options: [LONG, SHORT]
+      verdict:
+        type: choice
+        options: [real, not]
+      source:
+        type: choice
+        options: [detected, manual]
+        default: detected
+      note:
+        type: string
+        default: ""
+
+concurrency:
+  group: orbit-host
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ORBIT_DATA_SYNC_REMOTE: data
+  ORBIT_DATA_SYNC_JOURNAL: "1"
+  ORBIT_HOST_NAME: github-actions
+
+jobs:
+  label:
+    if: vars.ORBIT_DATA_REPO != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/orbit-setup
+        with:
+          data-token: ${{ secrets.ORBIT_DATA_TOKEN }}
+          data-repo: ${{ vars.ORBIT_DATA_REPO }}
+      - name: Save the label
+        env:
+          ASSET: ${{ inputs.asset }}
+          TF: ${{ inputs.timeframe }}
+          T1: ${{ inputs.t1 }}
+          T2: ${{ inputs.t2 }}
+          DIRECTION: ${{ inputs.direction }}
+          VERDICT: ${{ inputs.verdict }}
+          SOURCE: ${{ inputs.source }}
+          NOTE: ${{ inputs.note }}
+        run: >
+          uv run python -m orbit.strategy.label_cli --asset "$ASSET" --timeframe "$TF" --t1 "$T1" --t2 "$T2"
+          --direction "$DIRECTION" --verdict "$VERDICT" --source "$SOURCE" --note "$NOTE"
+      - name: Share the labels
+        run: uv run python scripts/sync_data.py
+      - name: Publish the web terminal's data
+        uses: ./.github/actions/publish-terminal

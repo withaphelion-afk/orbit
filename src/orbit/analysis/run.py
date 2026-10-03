@@ -4,7 +4,7 @@ Started by the web "Run analysis" button or the runner's daily schedule (see
 jobs.py). Steps: refresh data (optional), compute exact transit moments,
 rebuild the playbook (daily + hourly), record upcoming projections and grade
 elapsed ones (projection_log.py), backtest the strategy, retrain the
-feedback loop (calibrate.py) on backtest + live outcomes, re-check the Vedic
+divergence model (strategy/divergence_model.py) with its walk-forward check, re-check the Vedic
 model, optionally the placebo check, then record what changed. Progress and log lines go to the run's record file,
 which the API serves to the UI.
 """
@@ -79,21 +79,25 @@ def _strategy_and_model(rep: Reporter, events, start: float, end: float) -> dict
     from orbit.analysis import model
     from orbit.analysis.series import load_price_series
     from orbit.backtest.engine import run_all
-    from orbit.strategy import calibrate, live
+    from orbit.strategy import divergence_model, live
     from orbit.vedic.states import build_states
 
     series = {a: load_price_series(a) for a in ALL_ASSETS}
-    rep.step("Backtesting RSI divergence", start)
-    bt = run_all(series)["pooled"]
-    rep.log(f"Backtest: {bt.get('trades', 0)} trades, win rate {bt.get('win_rate', 0):.1%}, avg {bt.get('avg_r', 0):+.3f}R")
-    rep.step("Retraining the feedback loop", start + 0.02)
-    cal = calibrate.train()
+    rep.step("Training the divergence model (1H, 4H, 1D, 1W)", start)
+    rows = divergence_model.build()
+    cal = divergence_model.train(rows)
     oos = cal.get("out_of_sample") or {}
     rep.log(
-        f"Feedback loop: {cal['n_backtest']} backtest + {cal['n_live']} live outcomes; "
-        + (f"out-of-sample Brier {oos['brier']:.4f} vs {oos['brier_base_rate']:.4f} plain win rate ({'skill' if cal['skill'] else 'no skill: confidence = plain win rate'})" if oos else cal.get("note", ""))
+        f"Divergence model: {cal['n_market']} graded + {cal['n_user']} of yours; "
+        + (f"out-of-sample Brier {oos['brier']:.4f} vs {oos['brier_base_rate']:.4f} plain rate ({'trusted' if cal['trusted'] else 'unproven'})" if oos else cal.get("note", ""))
     )
-    counts = live.refresh(series)
+    rep.step("Backtesting the divergence strategy (4H, 1D)", start + 0.02)
+    report = run_all(cal, rows)
+    for tf, r in report["timeframes"].items():
+        bt = r["pooled"]
+        rep.log(f"Backtest {tf}: {bt.get('trades', 0)} trades, win rate {bt.get('win_rate', 0):.1%}, avg {bt.get('avg_r', 0):+.3f}R")
+    bt = report["pooled"]
+    counts = live.refresh()
     rep.log(f"Suggestions: {counts['new']} new, {counts['expired']} expired, {counts['resolved']} outcomes resolved")
     states = build_states(events=events)
     verdicts = {}
@@ -106,7 +110,7 @@ def _strategy_and_model(rep: Reporter, events, start: float, end: float) -> dict
         rep.log(f"Vedic model {asset.value}: " + (f"adds skill on {', '.join(skilled)}" if skilled else "no added skill on any target"))
     return {
         "backtest": {k: bt.get(k) for k in ("trades", "win_rate", "avg_r", "profit_factor", "max_drawdown_r")},
-        "calibration_skill": cal["skill"],
+        "calibration_skill": cal["trusted"],
         "suggestions": counts,
         "model_verdicts": verdicts,
     }

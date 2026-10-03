@@ -188,6 +188,20 @@ class SuggestionView(BaseModel):
     created_at: datetime
     risk_reward: float
     suggestion: TradeSuggestion
+    timeframe: str = "1d"  # 4h or 1d: the bars it lives on (expiry and outcome count bars of this timeframe)
+
+
+class DivergenceLabelRequest(BaseModel):
+    """✓ real / ✗ not real on a divergence, identified by its two swings' bar times (epoch seconds)."""
+
+    asset: Asset
+    timeframe: Literal["1h", "4h", "1d", "1w"]
+    t1: int
+    t2: int
+    direction: Literal["LONG", "SHORT"]
+    verdict: Literal["real", "not"]
+    note: str = ""
+    source: Literal["detected", "manual"] = "detected"  # manual: one detection missed, marked by clicking its two swings
 
 
 class DecisionRequest(BaseModel):
@@ -205,6 +219,7 @@ class JournalRow(BaseModel):
     expired: bool = False  # no decision within SUGGESTION_EXPIRY_BARS (logged as SKIPPED)
     counterfactual_pnl: float | None  # what a skipped/expired suggestion would have returned
     exit_reason: str | None = None  # target / stop / time, once the outcome is known
+    timeframe: str = "1d"
 
 
 class EquityPoint(BaseModel):

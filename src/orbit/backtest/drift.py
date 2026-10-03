@@ -23,12 +23,13 @@ from orbit.journal import store
 MIN_TRADES_FOR_STATUS = 10
 
 
-def report() -> dict | None:
+def report(timeframe: str = "1d") -> dict | None:
+    """Live vs backtest for one timeframe (4H and 1D are tracked apart)."""
     bt = load_backtest()
-    if not bt or not bt["pooled"].get("trades"):
+    exp = ((bt or {}).get("timeframes", {}).get(timeframe) or {}).get("pooled")
+    if not exp or not exp.get("trades"):
         return None
-    exp = bt["pooled"]
-    live = sorted((r for r in store.load() if r.paper is not None), key=lambda r: r.paper.exit_date)
+    live = sorted((r for r in store.load() if r.paper is not None and r.timeframe == timeframe), key=lambda r: r.paper.exit_date)
     r_live = np.array([r.paper.r_multiple for r in live])
     n = len(r_live)
     ew, er, sr = exp["win_rate"], exp["avg_r"], exp["std_r"]
@@ -42,12 +43,13 @@ def report() -> dict | None:
     # One point per exit day (charts need unique times): the running totals after that day's last exit.
     by_day: dict[str, int] = {}
     for k, r in enumerate(live):
-        by_day[r.paper.exit_date] = k
+        by_day[r.paper.exit_date[:10]] = k  # one point per exit day (charts need unique times)
     curve = [
         {"time": f"{d}T00:00:00Z", "expected": float((k + 1) * er), "live": float(equity[k]), "band": float(sr * math.sqrt(k + 1))}
         for d, k in by_day.items()
     ]
     return {
+        "timeframe": timeframe,
         "status": status,
         "z_score": float(z),
         "scale_down_at": DRIFT_SCALE_DOWN_Z,

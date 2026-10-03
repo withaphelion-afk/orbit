@@ -44,7 +44,9 @@ class Outcome(BaseModel):
 class SuggestionRecord(BaseModel):
     id: str
     created_at: datetime
-    signal_date: str  # the confirmation bar's date
+    signal_date: str  # the confirmation bar's time (ISO, UTC; a plain date in records from before timeframes)
+    timeframe: str = "1d"  # the bars this suggestion lives on: 4h or 1d
+    divergence_id: str | None = None  # the divergence it came from (strategy/divergence_model.py)
     risk_reward: float
     suggestion: TradeSuggestion
     features: dict[str, float]
