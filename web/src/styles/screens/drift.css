@@ -1,1 +1,78 @@
 /* Drift, backtest and feedback loop (DRIFT): panels/DriftPanel.tsx. Loaded after app.css, so rules here refine the shared ones. */
+
+/* toolbar: view switch on the left, drift status and z on the right */
+.dr-status { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.dr-z { font: 600 12px/1 var(--mono); color: var(--text); }
+
+/* Each view: stat cards on top, then cards; the last card grows to fill the panel's height. */
+.dr-view { display: flex; flex-direction: column; min-height: 100%; }
+.p-DRIFT .stats { flex: none; padding: 16px 18px 14px; gap: 12px; }
+.p-DRIFT .stat { border-radius: var(--r); }
+.dr-body { flex: 1 0 auto; display: flex; flex-direction: column; gap: 12px; padding: 0 18px 18px; }
+
+.dr-card { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); overflow: hidden; }
+.dr-card-h {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px;
+  min-height: 46px; padding: 12px 16px; border-bottom: 1px solid var(--line);
+}
+.dr-card-h h3 { margin: 0; font: 600 14px/1.2 var(--ui); color: var(--text); }
+.dr-card > .empty { padding: 28px 16px; }
+.dr-chart-card > .empty { flex: 1; align-content: center; justify-items: center; min-height: 200px; text-align: center; }
+
+.dr-note {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); color: var(--text-3);
+}
+.dr-note svg { flex: none; margin-top: 2px; }
+.dr-note .dnote { max-width: 120ch; }
+.p-DRIFT .dnote { font-size: 13px; line-height: 1.55; }
+
+/* charts */
+.dr-chart-card { flex: 1 0 auto; }
+.dr-chart { position: relative; flex: 1; min-height: 300px; }
+.p-DRIFT .chart-keys { gap: 6px 16px; font-size: 10px; }
+.p-DRIFT .chart-keys b { width: 12px; height: 3px; margin-right: 6px; border-radius: 2px; vertical-align: 2px; }
+.chart-keys b.k-muted { background: var(--text-2); }
+.chart-keys b.k-accent { background: var(--accent); }
+
+/* z gauge */
+.dr-zcard { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 14px 32px; padding: 16px 18px 18px; }
+.dr-zgauge { display: grid; gap: 4px; min-width: 0; }
+.dr-zgauge .lbl { font-size: 11px; letter-spacing: 0.08em; }
+.p-DRIFT .zgauge { height: 44px; margin: 10px 8px 0; }
+.p-DRIFT .zgauge .rail { top: 10px; height: 6px; border-radius: 3px; }
+.p-DRIFT .zgauge .pin { top: 4px; width: 2px; height: 18px; border-radius: 1px; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+.p-DRIFT .zgauge .ticks { top: 30px; display: block; font: 500 11px/1 var(--mono); }
+.p-DRIFT .zgauge .ticks span { position: absolute; transform: translateX(-50%); }
+
+/* tables inside cards */
+.dr-tbl th { padding: 11px 14px; background: var(--panel-2); }
+.dr-tbl td { padding: 10px 14px; }
+.dr-tbl th:first-child, .dr-tbl td:first-child { padding-left: 16px; }
+.dr-tbl th:last-child, .dr-tbl td:last-child { padding-right: 16px; }
+.dr-tbl tbody tr:last-child td { border-bottom: 0; }
+.dr-tbl tr.dr-all td { background: var(--accent-wash); }
+
+/* backtest: equity curve with the by-year table beside it; the year list scrolls inside the chart's height */
+.dr-bt-bottom { flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: 12px; }
+.dr-years .dr-fill { position: relative; flex: 1; min-height: 0; }
+.dr-years .dr-fill > .tbl-wrap { position: absolute; inset: 0; overflow: auto; }
+
+/* feedback loop */
+.dr-fb-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; align-items: start; }
+.p-DRIFT .wbar { width: 140px; height: 6px; border-radius: 3px; background: var(--panel-3); }
+.p-DRIFT .wbar i.pos { border-radius: 0 3px 3px 0; }
+.p-DRIFT .wbar i.neg { border-radius: 3px 0 0 3px; }
+
+@media (max-width: 860px) {
+  .p-DRIFT .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; }
+  .p-DRIFT .stat { gap: 10px; padding: 12px; }
+  .dr-body { padding: 0 12px 12px; }
+  .dr-zcard, .dr-bt-bottom, .dr-fb-grid { grid-template-columns: minmax(0, 1fr); }
+  .dr-chart { min-height: 260px; }
+  .dr-years .dr-fill { min-height: 280px; }
+  .p-DRIFT .wbar { width: 90px; }
+}
+@media (max-width: 520px) {
+  .p-DRIFT .stat-ico { display: none; }
+}

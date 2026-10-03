@@ -1,1 +1,101 @@
 /* Help (HELP): panels/HelpPanel.tsx. Loaded after app.css, so rules here refine the shared ones. */
+
+.help {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 24px;
+  padding: 18px 18px 24px;
+  background: none;
+}
+.help-group { display: grid; gap: 10px; min-width: 0; }
+.help .help-group-h { margin: 0 2px; font: 600 11px/1.2 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.help-grid { display: grid; gap: 12px; min-width: 0; }
+.help-grid.nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.help-grid.prose { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.help-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel-2);
+}
+.help-card-h { display: flex; align-items: center; gap: 10px; }
+.help-ico {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: var(--panel-3);
+  color: var(--text);
+}
+.help-astro .help-ico { color: var(--astro); }
+.help-card h4 { margin: 0; font: 600 15px/1.25 var(--ui); color: var(--accent); }
+.help .help-card p { margin: 0; max-width: 76ch; font: 400 13px/1.6 var(--ui); color: var(--text-2); }
+.help-card p b { font-weight: 600; color: var(--text); }
+.help .help-card code { padding: 2px 5px; border-radius: 4px; }
+
+/* tables of keys and screens */
+.help-tbl { width: 100%; border-collapse: collapse; }
+.help-tbl th {
+  padding: 0 14px 8px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font: 600 11px/1.2 var(--ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.help .help-tbl td { padding: 9px 14px 9px 0; border-top: 0; border-bottom: 1px solid var(--line); vertical-align: middle; font: 400 13px/1.4 var(--ui); color: var(--text); }
+.help .help-tbl th:last-child, .help .help-tbl td:last-child { padding-right: 0; }
+.help .help-tbl tr:last-child td { border-bottom: 0; padding-bottom: 0; }
+.help .help-tbl td.d { color: var(--text-2); }
+.help-tbl td.kc { width: 1%; white-space: nowrap; }
+.help-tbl td.fn { white-space: nowrap; }
+.fn-label { color: var(--text); font-weight: 500; }
+.help .fn-code { margin-left: 4px; padding: 0; background: none; font: 500 11px/1 var(--mono); color: var(--text-3); }
+
+/* key caps */
+.keys { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.keys-join { padding: 0 2px; font: 500 12px/1 var(--ui); color: var(--text-3); }
+.help kbd.k {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--panel-3);
+  font: 600 11px/1 var(--mono);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.help p kbd.k { min-width: 20px; height: 20px; padding: 0 5px; font-size: 10.5px; vertical-align: 1px; }
+.help p .keys { gap: 3px; vertical-align: 1px; }
+.help p .keys kbd.k { vertical-align: 0; }
+
+@media (max-width: 1280px) {
+  .help-grid.nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .help-grid.nav > .help-search { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 28px; align-items: start; }
+  .help-search > .help-card-h { grid-column: 1 / -1; }
+}
+@media (max-width: 1040px) {
+  .help-grid.prose { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  .help { gap: 20px; padding: 12px 12px 18px; }
+  .help-grid.nav { grid-template-columns: minmax(0, 1fr); }
+  .help-grid.nav > .help-search { display: flex; grid-column: auto; }
+  .help-card { padding: 14px; }
+  .help-tbl td.fn { white-space: normal; }
+  .help .fn-code { display: block; margin: 3px 0 0; }
+}

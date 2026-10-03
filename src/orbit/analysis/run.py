@@ -2,7 +2,8 @@
 
 Started by the web "Run analysis" button or the runner's daily schedule (see
 jobs.py). Steps: refresh data (optional), compute exact transit moments,
-rebuild the playbook (daily + hourly), backtest the strategy, retrain the
+rebuild the playbook (daily + hourly), record upcoming projections and grade
+elapsed ones (projection_log.py), backtest the strategy, retrain the
 feedback loop (calibrate.py) on backtest + live outcomes, re-check the Vedic
 model, optionally the placebo check, then record what changed. Progress and log lines go to the run's record file,
 which the API serves to the UI.
@@ -40,6 +41,37 @@ def _changes(before: dict[Asset, dict], after: dict[Asset, dict]) -> list[LabelC
                 out.append(LabelChange(asset=asset.value, pattern_id=pid, description=desc, kind="timing", before=old[2] if old else None, after=timing))
     # First run: everything is "new", which isn't worth listing.
     return [c for c in out if c.before is not None]
+
+
+def _projections(rep: Reporter, events, built: list[Asset]) -> dict:
+    """Record this run's projections in the forward track record and grade the ones
+    whose windows have closed. Returns summary fields."""
+    from datetime import datetime, timezone
+
+    from orbit.core.types import AssetPlaybook
+    from orbit.analysis import projection_log
+    from orbit.analysis.exceptions import regime_per_bar
+    from orbit.analysis.playbook import _regime_context
+    from orbit.analysis.projections import build_projections, current_conditions
+    from orbit.analysis.series import load_price_series
+
+    now = datetime.now(timezone.utc)
+    playbooks, conditions = {}, {}
+    for asset in built:
+        path = ANALYSIS_DIR / f"{asset.value}.json"
+        if not path.exists():
+            continue
+        playbooks[asset] = AssetPlaybook.model_validate_json(path.read_text(encoding="utf-8"))
+        series = load_price_series(asset)
+        regimes = regime_per_bar(series, _regime_context(asset, series)[0]) if len(series) else []
+        conditions[asset] = current_conditions(series, next((r for r in reversed(regimes) if r), None))
+    rows = build_projections(events, playbooks, now, conditions=conditions)
+    added = projection_log.record(rows, now)
+    graded = projection_log.grade(now)
+    hits = sum(1 for r in graded if r.hit)
+    scored = sum(1 for r in graded if r.hit is not None)
+    rep.log(f"Projections: {len(rows)} in the next 60 days, {added} newly recorded; {scored} graded this run ({hits} hits)")
+    return {"upcoming": len(rows), "recorded": added, "graded": scored, "hits": hits}
 
 
 def _strategy_and_model(rep: Reporter, events, start: float, end: float) -> dict:
@@ -102,6 +134,14 @@ def main(job_id: str) -> None:
             "tests_by_family": meta.tests_by_family,
             "assets": meta.assets,
         }
+        rep.step("Recording and grading projections", span[1])
+        try:
+            built = [a for a in ALL_ASSETS if "skipped" not in meta.assets.get(a.value, {"skipped": True})]
+            summary["projections"] = _projections(rep, events, built)
+        except Exception as exc:
+            # The track record is a side product: losing one day of it must not lose the run.
+            rep.log(f"Projections skipped this run: {type(exc).__name__}: {exc}")
+            rep.log(traceback.format_exc())
         summary.update(_strategy_and_model(rep, events, span[1], 0.62 if run.include_placebo else 0.97))
         if run.include_placebo:
             from orbit.analysis.placebo import run_placebo

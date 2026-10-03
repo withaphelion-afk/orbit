@@ -1,10 +1,12 @@
+import { BrainCircuit, CalendarDays, Layers } from 'lucide-react'
 import { useModel } from '../../api/hooks'
 import type { Asset, ModelReport } from '../../api/types'
-import { Empty, Pill, QueryState } from '../../components/bits'
+import { Empty, Pill, QueryState, StatCard, StatGrid } from '../../components/bits'
 import { num, pct } from '../../lib/format'
 
 const TARGET: Record<string, string> = { big_up: 'Big up move', big_down: 'Big down move', sideways: 'Sideways' }
 const verdictTone = (v: string) => (v === 'adds skill' ? 'ok' : v === 'unclear' ? 'watch' : 'off')
+const ICON = { size: 18, strokeWidth: 1.75 } as const
 
 /** Does knowing the Vedic sky make a price-only forecast better? */
 export function ModelTab({ asset }: { asset: Asset }) {
@@ -22,19 +24,30 @@ export function ModelTab({ asset }: { asset: Asset }) {
 
 function ModelView({ m }: { m: ModelReport }) {
   const rows = Object.entries(m.results)
+  const adds = rows.filter(([, r]) => r.verdict === 'adds skill').length
+  const unclear = rows.filter(([, r]) => r.verdict === 'unclear').length
   return (
-    <>
-      <div className="pbk-tools">
-        <span className="dim">
-          Two forecasters trained walk-forward (retrained every {m.retrain_years} years, always tested on the years after): one sees price only (
-          {m.tech_features.length} features), the other also sees {m.vedic_features} Vedic states. The sky only gets credit if it beats price alone{' '}
-          <b>and</b> beats the same Vedic data shifted by years (controls that can't know anything). As of {m.as_of}.
-        </span>
-      </div>
+    <div className="astro-tab">
+      <p className="astro-intro">
+        Two forecasters trained walk-forward (retrained every {m.retrain_years} years, always tested on the years after): one sees price only ({m.tech_features.length}{' '}
+        features), the other also sees {m.vedic_features} Vedic states. The sky only gets credit if it beats price alone <b>and</b> beats the same Vedic data shifted by
+        years (controls that can't know anything). As of {m.as_of}.
+      </p>
+      <StatGrid>
+        <StatCard
+          icon={<BrainCircuit {...ICON} />}
+          label="Adds skill"
+          value={`${adds} / ${rows.length}`}
+          tone={adds ? 'up' : 'dim'}
+          caption={unclear ? `targets where the sky helped · ${unclear} unclear` : 'targets where the sky helped'}
+        />
+        <StatCard icon={<Layers {...ICON} />} label="Inputs" value={`${m.tech_features.length} + ${m.vedic_features}`} caption="price features + Vedic states" />
+        <StatCard icon={<CalendarDays {...ICON} />} label="As of" value={m.as_of} caption={`retrained every ${m.retrain_years} years`} />
+      </StatGrid>
       <div className="model-summary">
         <b>{m.summary}</b>
       </div>
-      <div className="tbl-wrap">
+      <div className="tbl-wrap astro-card">
         <table className="tbl">
           <thead>
             <tr>
@@ -77,23 +90,25 @@ function ModelView({ m }: { m: ModelReport }) {
       </div>
       <details className="model-weights">
         <summary>Vedic states the model leaned on most (only meaningful where the verdict is ADDS SKILL)</summary>
-        {rows.map(([key, r]) =>
-          r.top_vedic_features?.length ? (
-            <div key={key} className="mw">
-              <span className="lbl">
-                {TARGET[r.target]} · {r.horizon_days}d
-              </span>
-              <ul>
-                {r.top_vedic_features.slice(0, 5).map((f) => (
-                  <li key={f.state}>
-                    <span className={f.weight > 0 ? 'up' : 'down'}>{f.weight > 0 ? '▲' : '▼'}</span> {f.description}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null,
-        )}
+        <div className="mw-grid">
+          {rows.map(([key, r]) =>
+            r.top_vedic_features?.length ? (
+              <div key={key} className="mw">
+                <span className="lbl">
+                  {TARGET[r.target]} · {r.horizon_days}d
+                </span>
+                <ul>
+                  {r.top_vedic_features.slice(0, 5).map((f) => (
+                    <li key={f.state}>
+                      <span className={f.weight > 0 ? 'up' : 'down'}>{f.weight > 0 ? '▲' : '▼'}</span> {f.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
+        </div>
       </details>
-    </>
+    </div>
   )
 }

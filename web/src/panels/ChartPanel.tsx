@@ -24,24 +24,36 @@ export function ChartPanel({ hidden }: { hidden: boolean }) {
   const interval = useTerminal((s) => s.tvInterval)
   const setInterval = useTerminal((s) => s.setTvInterval)
   const meta = ASSET_META[asset]
+  const live = mode === 'LIVE'
 
   return (
     <Panel
       code="GP"
       hidden={hidden}
-      title={`${meta.name} · ${mode === 'LIVE' ? 'TradingView live' : 'Orbit daily, full history'}`}
+      title={`${meta.name} · ${live ? 'TradingView live' : 'Orbit daily, full history'}`}
+      description={
+        live
+          ? `${meta.pair} streamed live by TradingView; switch to ORBIT for Orbit's own daily history with its signals, transits and trade levels.`
+          : `${meta.pair} on Orbit's stored daily history, marking regime flips, RSI divergences, Vedic transits and any pending trade's levels.`
+      }
       tools={
         <>
-          {mode === 'LIVE' ? (
-            <Seg label="Interval" value={interval} onChange={setInterval} options={TV_INTERVALS.map((i) => ({ label: i.label, value: i.value }))} />
-          ) : (
-            <Seg label="Interval" value="D" onChange={() => {}} options={[{ label: '1D', value: 'D' }]} />
-          )}
-          <Seg label="Chart source" value={mode} onChange={setMode} options={MODES} />
+          <div className="gp-tool" title={live ? 'Bar interval of the live chart' : "Orbit's own chart is daily bars only"}>
+            <span className="gp-tool-lbl">Interval</span>
+            {live ? (
+              <Seg label="Interval" value={interval} onChange={setInterval} options={TV_INTERVALS.map((i) => ({ label: i.label, value: i.value }))} />
+            ) : (
+              <Seg label="Interval" value="D" onChange={() => {}} options={[{ label: '1D', value: 'D' }]} />
+            )}
+          </div>
+          <div className="gp-tool gp-src" title="LIVE: TradingView's streamed chart. ORBIT: Orbit's stored daily history with its own markers.">
+            <span className="gp-tool-lbl">Source</span>
+            <Seg label="Chart source" value={mode} onChange={setMode} options={MODES} />
+          </div>
         </>
       }
     >
-      {mode === 'LIVE' ? (
+      {live ? (
         <TradingViewChart symbol={meta.tvSymbol} interval={interval} />
       ) : (
         <OrbitChartData />

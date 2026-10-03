@@ -16,6 +16,9 @@ web/src/api/static.ts:
     drift.json, backtest.json, calibration.json, playbook.json, snapshot.json
     transits.json            the default window (90 days back to 180 ahead)
     transits-all.json        every event except the Moon's, for the chart's full history
+    projections.json         upcoming projections, the default view (60 days, weak and above)
+    projections-all.json     180 days ahead, "none" rows included
+    projections-track.json   the forward track record's summary
     candles/{ASSET}.json, signals/{ASSET}.json, playbook/{ASSET}.json, model/{ASSET}.json
     patterns/{ASSET}/{hex of the pattern id}.json
     hourly/{ASSET}/{YEAR}.json   hourly bars as [time, open, high, low, close, volume] rows
@@ -96,6 +99,9 @@ def build(out: Path) -> int:
         ("playbook.json", "/api/playbook"),
         ("transits.json", "/api/transits"),
         ("transits-all.json", "/api/transits?from=1990-01-01&to=2100-01-01"),
+        ("projections.json", "/api/projections"),
+        ("projections-all.json", "/api/projections?days=180&include_none=true"),
+        ("projections-track.json", "/api/projections/track"),
         ("analysis/runs.json", "/api/analysis/runs?limit=40"),
         ("analysis/current.json", "/api/analysis/runs/current"),
         ("analysis/schedule.json", "/api/analysis/schedule"),

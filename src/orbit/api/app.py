@@ -19,7 +19,19 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from orbit.config import settings
-from orbit.core.types import Asset, Candle, ConfidenceLabel, Decision, Direction, PatternResult, Planet, Signal, SpeedClass, TransitEventType
+from orbit.core.types import (
+    Asset,
+    Candle,
+    ConfidenceLabel,
+    Decision,
+    Direction,
+    PatternResult,
+    Planet,
+    ProjectionTrack,
+    Signal,
+    SpeedClass,
+    TransitEventType,
+)
 from orbit.data.dates import today_utc, utc_day
 from orbit.api import store
 from orbit.api.live import LiveFeed
@@ -37,6 +49,7 @@ from orbit.api.schemas import (
     PatternSummary,
     PlaybookOverview,
     PlaybookView,
+    ProjectionView,
     Quote,
     RegimeReading,
     RunnerStatus,
@@ -48,6 +61,7 @@ from orbit.api.schemas import (
 )
 from orbit.analysis.confidence import RANK
 from orbit.analysis.patterns import patterns_for_event
+from orbit.analysis.projections import DAYS_AHEAD, build_projections, current_conditions, headline_stat
 from orbit.analysis.transit_events import event_label
 from orbit.runner.status import read_status
 from orbit.strategy.rsi_divergence import NAME as STRATEGY_NAME
@@ -306,6 +320,28 @@ def create_app(live: bool = True) -> FastAPI:
         if not r:
             raise HTTPException(404, f"No pattern {pattern_id} for {asset.value}.")
         return r
+
+    # ------------------------------------------------------------ projections
+
+    @app.get("/api/projections", response_model=list[ProjectionView])
+    def projections(days: int = Query(DAYS_AHEAD, ge=1, le=730), include_none: bool = False):
+        """Upcoming events joined to each asset's playbook evidence. Weak and none rows are
+        unproven (trusted=false); insufficient_data is never projected."""
+        playbooks = {a: pb for a in ASSETS if (pb := store.playbook(a)) is not None}
+        if not playbooks:
+            raise HTTPException(404, "No playbook yet, so there is no evidence to project from. Run the analysis (or scripts/build_playbook.py).")
+        conditions = {}
+        for asset in playbooks:
+            by_day, _ = store.regime_by_day(asset)
+            conditions[asset] = current_conditions(store.price_series(asset), by_day[max(by_day)] if by_day else None)
+        rows = build_projections(store.transit_events(), playbooks, datetime.now(timezone.utc), days, include_none, conditions)
+        results = {a: {r.pattern_id: r for r in pb.patterns} for a, pb in playbooks.items()}
+        return [ProjectionView(**dict(p), horizon_stat=headline_stat(results[p.asset][p.pattern_id])) for p in rows]
+
+    @app.get("/api/projections/track", response_model=ProjectionTrack)
+    def projections_track():
+        """How recorded projections turned out once their windows closed, by label, beside chance."""
+        return store.projection_track()
 
     # ------------------------------------------------------------ strategy, journal, backtest
 

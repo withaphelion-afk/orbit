@@ -20,6 +20,7 @@ from orbit.core.types import (
     Outcome,
     PatternHorizonStat,
     Planet,
+    Projection,
     SidewaysStateResult,
     SpeedClass,
     TimingHorizonStat,
@@ -242,3 +243,12 @@ class ScheduleView(BaseModel):
     runner_running: bool
     last_success_at: datetime | None
     last_success_trigger: str | None
+
+
+class ProjectionView(Projection):
+    """A projection plus the full stats of its headline horizon (n, every rate, p and q
+    values), so the evidence panel can show the calculation. The pattern's full
+    evidence, occurrences included, is /api/playbook/{asset}/patterns/{pattern_id}."""
+
+    horizon_stat: PatternHorizonStat
+

@@ -224,25 +224,25 @@ export function OrbitChart({ asset, candles, signals, transits, pending }: Props
           </div>
         )}
         <div className="chart-keys">
-          <span>
-            <b style={{ background: 'var(--up)' }} />
+          <span title="Signal arrows: BULL and BEAR regime flips, and RSI DIV for the strategy's divergence signals">
+            <b className="k-flip" />
             REGIME FLIP
           </span>
-          <span>
-            <b style={{ background: 'var(--astro)' }} />
+          <span title="Vedic events: squares for stations, eclipses and slow grahas changing sign; circles where the playbook rates the event for this asset">
+            <b className="k-transit" />
             TRANSIT
           </span>
-          <span>
-            <b style={{ background: 'var(--text-2)' }} />
+          <span title="20-day simple moving average">
+            <b className="k-line k-20" />
             20D
           </span>
-          <span>
-            <b style={{ background: 'var(--accent-lo)' }} />
+          <span title="50-day simple moving average">
+            <b className="k-line k-50" />
             50D
           </span>
           {pending && (
-            <span>
-              <b style={{ background: 'var(--accent)' }} />
+            <span title="Dashed lines: the pending suggestion's target, entry and stop">
+              <b className="k-pend" />
               PENDING {pending.suggestion.direction} · CONF {pending.suggestion.confidence.toFixed(2)}
             </span>
           )}

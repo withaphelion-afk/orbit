@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { CalendarClock, LoaderCircle, Play } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useCurrentRun, useRuns, useSchedule, useStartRun } from '../api/hooks'
 import type { AnalysisRun } from '../api/types'
@@ -39,6 +40,7 @@ export function RunControl({ compact = false }: { compact?: boolean }) {
 
   const last = runs.data?.find((r) => r.status === 'succeeded' || r.status === 'failed')
   const sched = schedule.data
+  const busy = !!running || start.isPending
 
   const onStart = () =>
     start.mutate(
@@ -52,7 +54,8 @@ export function RunControl({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`runctl ${compact ? 'compact' : ''}`}>
       <div className="runctl-row">
-        <button className="act run" onClick={onStart} disabled={!!running || start.isPending} title="Re-run every check on the latest data">
+        <button className="act run" onClick={onStart} disabled={busy} title="Re-run every check on the latest data">
+          {busy ? <LoaderCircle className="runctl-spin" size={15} strokeWidth={2} aria-hidden /> : <Play size={14} strokeWidth={2} aria-hidden />}
           {running ? 'RUNNING…' : start.isPending ? 'STARTING…' : 'RUN ANALYSIS'}
         </button>
         <label className="chk" title="Fetch the latest prices and ephemeris before testing">
@@ -62,35 +65,44 @@ export function RunControl({ compact = false }: { compact?: boolean }) {
           <input type="checkbox" checked={placebo} onChange={(e) => setPlacebo(e.target.checked)} disabled={!!running} /> Include placebo check (~40 min)
         </label>
       </div>
-      {running ? (
-        <div className="runctl-progress">
-          <div className="bar">
-            <i style={{ width: `${Math.round(running.progress * 100)}%` }} />
+      <div className="runctl-info">
+        {running ? (
+          <div className="runctl-progress">
+            <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(running.progress * 100)}>
+              <i style={{ width: `${Math.round(running.progress * 100)}%` }} />
+            </div>
+            <span>
+              {Math.round(running.progress * 100)}% · {running.step} · {duration(running, now)} · {running.trigger === 'schedule' ? 'scheduled run' : 'started here'}
+            </span>
           </div>
-          <span>
-            {Math.round(running.progress * 100)}% · {running.step} · {duration(running, now)} · {running.trigger === 'schedule' ? 'scheduled run' : 'started here'}
-          </span>
-        </div>
-      ) : last ? (
-        <div className={`runctl-last ${last.status === 'failed' ? 'down' : ''}`}>
-          Last run {day(last.created_at)} {hhmm(last.created_at)} · {last.trigger === 'schedule' ? 'scheduled' : 'manual'} · {duration(last, now)} ·{' '}
-          {last.status === 'failed'
-            ? `failed: ${last.error ?? 'unknown error'}`
-            : `${num(last.summary.total_tests ?? 0, 0)} tests · ${last.changes.length} label change${last.changes.length === 1 ? '' : 's'}${
-                last.summary.placebo ? ` · placebo ${last.summary.placebo.runs_with_any_discovery}/${last.summary.placebo.placebo_runs}` : ''
-              }`}
-        </div>
-      ) : (
-        <div className="runctl-last dim">No run from here yet.</div>
-      )}
-      {sched && (
-        <div className="runctl-sched dim">
-          {sched.enabled
-            ? `Scheduled daily at ${sched.daily_at_utc} UTC by the runner · ${WEEKDAYS[sched.placebo_weekday]} include the placebo check · `
-            : 'Scheduled runs are off in settings · '}
-          {sched.runner_running ? (sched.next_at ? `next ${day(sched.next_at)} ${hhmm(sched.next_at)} (in ${ago(now - (Date.parse(sched.next_at) - now), now)})` : 'runner up') : 'runner not running, so nothing is scheduled'}
-        </div>
-      )}
+        ) : last ? (
+          <div className={`runctl-last ${last.status === 'failed' ? 'down' : ''}`}>
+            Last run {day(last.created_at)} {hhmm(last.created_at)} · {last.trigger === 'schedule' ? 'scheduled' : 'manual'} · {duration(last, now)} ·{' '}
+            {last.status === 'failed'
+              ? `failed: ${last.error ?? 'unknown error'}`
+              : `${num(last.summary.total_tests ?? 0, 0)} tests · ${last.changes.length} label change${last.changes.length === 1 ? '' : 's'}${
+                  last.summary.placebo ? ` · placebo ${last.summary.placebo.runs_with_any_discovery}/${last.summary.placebo.placebo_runs}` : ''
+                }`}
+          </div>
+        ) : (
+          <div className="runctl-last dim">No run from here yet.</div>
+        )}
+        {sched && (
+          <div className="runctl-sched dim">
+            <CalendarClock size={13} strokeWidth={1.75} aria-hidden />
+            <span>
+              {sched.enabled
+                ? `Scheduled daily at ${sched.daily_at_utc} UTC by the runner · ${WEEKDAYS[sched.placebo_weekday]} include the placebo check · `
+                : 'Scheduled runs are off in settings · '}
+              {sched.runner_running
+                ? sched.next_at
+                  ? `next ${day(sched.next_at)} ${hhmm(sched.next_at)} (in ${ago(now - (Date.parse(sched.next_at) - now), now)})`
+                  : 'runner up'
+                : 'runner not running, so nothing is scheduled'}
+            </span>
+          </div>
+        )}
+      </div>
       {!compact && last && last.changes.length > 0 && (
         <details className="runctl-changes">
           <summary>What changed in the last run ({last.changes.length})</summary>

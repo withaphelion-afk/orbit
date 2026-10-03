@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { readTheme } from '../../lib/theme'
 
 const EMBED_SRC = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
 
@@ -8,6 +9,7 @@ interface Props {
 }
 
 function embed(el: HTMLElement, symbol: string, interval: string) {
+  const th = readTheme()
   el.innerHTML = ''
   const widget = document.createElement('div')
   widget.className = 'tradingview-widget-container__widget'
@@ -24,8 +26,8 @@ function embed(el: HTMLElement, symbol: string, interval: string) {
     theme: 'dark',
     style: '1',
     locale: 'en',
-    backgroundColor: '#0a0a0a',
-    gridColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: th.panel,
+    gridColor: th.line,
     allow_symbol_change: false,
     withdateranges: true,
     hide_side_toolbar: false,

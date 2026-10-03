@@ -319,6 +319,86 @@ class AssetPlaybook(BaseModel):
     sideways: list[SidewaysStateResult]
 
 
+class LikeNow(BaseModel):
+    """A pattern's past occurrences that happened in conditions like today's."""
+
+    regime: str  # the asset's current regime, which matching occurrences shared
+    volatility_percentile: float  # the asset's current 20d volatility percentile (matches within +-0.2)
+    n: int  # matching occurrences with a known outcome
+    matches: int  # of those, how many ended in the projected outcome
+    share: float
+
+
+class Projection(BaseModel):
+    """One upcoming event for one asset, with what the playbook's evidence says
+    followed it in the past. A projection of history, never a promise: `trusted`
+    is only true for patterns that survive multiple-testing correction."""
+
+    id: str  # asset + pattern_id + the event's moment: stable across runs
+    asset: Asset
+    event: TransitEvent
+    pattern_id: str
+    description: str
+    label: ConfidenceLabel
+    score: int
+    horizon_days: int  # the pattern's headline horizon, in the asset's own bars
+    outcome: Outcome  # the pattern's dominant outcome at that horizon
+    n: int
+    hit_rate: float  # share of past occurrences followed by `outcome` within the horizon
+    base_rate: float  # the same outcome's rate over every day of the asset's history
+    lift: float | None  # hit_rate / base_rate (None when the base rate is 0)
+    ci_low: float  # 95% Wilson interval for hit_rate
+    ci_high: float
+    q_value: float | None
+    mean_return: float
+    win_rate: float
+    timing_headline_hours: int | None = None
+    timing_dominant: Outcome | None = None
+    timing_label: ConfidenceLabel = ConfidenceLabel.INSUFFICIENT_DATA
+    median_hours_to_move: float | None = None
+    window_start: datetime  # the exact moment (or the day, if no moment is known)
+    window_end: datetime  # the day of the bar that closes the horizon (projected trading calendar)
+    like_now: LikeNow | None = None  # None for lunar patterns (no stored occurrences) or no match
+    group_id: str = ""  # projections for the same asset whose windows overlap share this
+    conflict: bool = False  # its group holds both a BIG_UP and a BIG_DOWN projection
+    trusted: bool = False  # label is strong or moderate
+    note: str = ""  # one plain-English sentence
+
+
+class LoggedProjection(BaseModel):
+    """A projection as recorded for the forward track record. `projection` is
+    frozen at recording time; only the grading fields are ever filled in later."""
+
+    projection: Projection
+    recorded_at: datetime
+    graded_at: datetime | None = None
+    graded_through: datetime | None = None  # the last daily bar the grade used
+    actual_outcome: Outcome | None = None
+    forward_return: float | None = None
+    hit: bool | None = None
+    void_reason: str | None = None  # window elapsed but the outcome can't be labelled
+
+
+class TrackBucket(BaseModel):
+    recorded: int = 0
+    pending: int = 0  # window not fully elapsed in stored bars yet
+    graded: int = 0
+    void: int = 0
+    hits: int = 0
+    hit_rate: float | None = None  # hits / graded
+    avg_base_rate: float | None = None  # what chance alone would score on the same graded rows
+
+
+class ProjectionTrack(BaseModel):
+    """How recorded projections actually turned out, by confidence label."""
+
+    first_recorded_at: datetime | None
+    total: TrackBucket
+    by_label: dict[str, TrackBucket]
+    recent: list[LoggedProjection]  # most recently graded first
+    note: str
+
+
 class PlaybookRunMeta(BaseModel):
     """What one playbook run tested, so every result can be read in context."""
 
