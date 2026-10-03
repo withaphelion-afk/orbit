@@ -1,0 +1,79 @@
+name: decide
+# The web terminal finds its own decisions by this name.
+run-name: decide ${{ inputs.decision }} ${{ inputs.suggestion_id }}
+
+# Take / Skip / Modify from the static web terminal: log the decision in the
+# shared journal (private data repo), then republish the terminal's data so it
+# shows within a few minutes. Started by the terminal through workflow_dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      suggestion_id:
+        description: Suggestion id
+        type: string
+        required: true
+      decision:
+        description: TAKEN, SKIPPED or MODIFIED
+        type: choice
+        options: [TAKEN, SKIPPED, MODIFIED]
+      notes:
+        description: Your notes
+        type: string
+        default: ""
+      entry_price:
+        description: Entry (MODIFIED only)
+        type: string
+        default: ""
+      stop_loss:
+        description: Stop (MODIFIED only)
+        type: string
+        default: ""
+      take_profit:
+        description: Target (MODIFIED only)
+        type: string
+        default: ""
+
+concurrency:
+  group: orbit-host
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ORBIT_DATA_SYNC_REMOTE: data
+  ORBIT_DATA_SYNC_JOURNAL: "1"
+  ORBIT_HOST_NAME: github-actions
+
+jobs:
+  decide:
+    if: vars.ORBIT_DATA_REPO != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/orbit-setup
+        with:
+          data-token: ${{ secrets.ORBIT_DATA_TOKEN }}
+          data-repo: ${{ vars.ORBIT_DATA_REPO }}
+      - name: Log the decision
+        env:
+          ID: ${{ inputs.suggestion_id }}
+          DECISION: ${{ inputs.decision }}
+          NOTES: ${{ inputs.notes }}
+          ENTRY: ${{ inputs.entry_price }}
+          STOP: ${{ inputs.stop_loss }}
+          TARGET: ${{ inputs.take_profit }}
+        run: |
+          args=(--id "$ID" --decision "$DECISION" --notes "$NOTES")
+          if [ "$DECISION" = "MODIFIED" ]; then args+=(--entry "$ENTRY" --stop "$STOP" --target "$TARGET"); fi
+          uv run python -m orbit.journal.cli "${args[@]}"
+      - name: Share the journal
+        run: uv run python scripts/sync_data.py
+      - name: Publish the web terminal's data
+        uses: ./.github/actions/publish-terminal
+        with:
+          hf-token: ${{ secrets.HF_TOKEN }}
+          hf-space: ${{ vars.HF_SPACE }}

@@ -1,0 +1,29 @@
+name: Publish the terminal's data
+description: Render every API answer to static files and send the changed ones to the Hugging Face Space.
+
+inputs:
+  hf-token:
+    description: Hugging Face write token (secret HF_TOKEN); nothing is published without it
+    required: false
+    default: ""
+  hf-space:
+    description: owner/name of the Space (variable HF_SPACE; default <hf-user>/orbit)
+    required: false
+    default: ""
+  squash:
+    description: Also collapse the Space's git history afterwards ("true" once a day)
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        HF_TOKEN: ${{ inputs.hf-token }}
+        HF_SPACE: ${{ inputs.hf-space }}
+        SQUASH: ${{ inputs.squash }}
+      run: |
+        uv run python -m orbit.snapshot site/api
+        uv run --with huggingface_hub python deploy/hf-space/publish.py --api site/api
+        if [ "$SQUASH" = "true" ]; then uv run --with huggingface_hub python deploy/hf-space/publish.py --squash; fi

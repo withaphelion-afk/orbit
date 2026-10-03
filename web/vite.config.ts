@@ -7,6 +7,8 @@ import { defineConfig } from 'vite'
 const target = process.env.ORBIT_API_TARGET ?? 'http://127.0.0.1:8000'
 
 export default defineConfig({
+  // The static cloud build is served from a Space's subpath-agnostic host: use relative asset URLs.
+  base: process.env.VITE_ORBIT_STATIC === '1' ? './' : '/',
   plugins: [react()],
   server: {
     proxy: {

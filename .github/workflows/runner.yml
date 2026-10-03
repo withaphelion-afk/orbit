@@ -45,6 +45,12 @@ jobs:
       - name: Share results (runner status, Vedic sky)
         if: always()
         run: uv run python -m orbit.outputs --publish
+      - name: Publish the web terminal's data
+        if: always()
+        uses: ./.github/actions/publish-terminal
+        with:
+          hf-token: ${{ secrets.HF_TOKEN }}
+          hf-space: ${{ vars.HF_SPACE }}
       - name: Report a failed cycle
         if: steps.cycle.outcome == 'failure'
         run: |
