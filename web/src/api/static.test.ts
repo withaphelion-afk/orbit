@@ -6,14 +6,13 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 const SRC = { dataRepo: 'o/data', codeRepo: 'o/code' }
-const PREFIX = 'https://api.github.com/repos/o/data/contents/'
 
 /** Serves `map` as the data repo's site branch; `calls` records the file paths asked for. */
 function files(map: Record<string, unknown>, status?: number) {
   const calls: string[] = []
   const fetcher = (async (input: RequestInfo | URL) => {
     const url = String(input)
-    const key = url.slice(PREFIX.length).replace(/\?ref=site$/, '')
+    const key = decodeURIComponent(url.split('path=')[1] ?? '')
     calls.push(key)
     if (status) return new Response('', { status })
     return key in map ? json(map[key]) : new Response('not found', { status: 404 })
@@ -39,7 +38,6 @@ function memoryStorage(): Storage {
 describe('createStaticApi', () => {
   beforeEach(() => {
     globalThis.localStorage = memoryStorage()
-    localStorage.setItem('orbit.githubToken', JSON.stringify('test-token'))
   })
 
   it('names pattern files like the Python snapshot does', () => {
@@ -107,10 +105,19 @@ describe('createStaticApi', () => {
     expect(calls).toEqual(['quotes.json'])
   })
 
-  it('forgets a token GitHub refuses', async () => {
+  it('reads through the login service on the site, never GitHub directly', async () => {
+    const urls: string[] = []
+    const fetcher = (async (input: RequestInfo | URL) => {
+      urls.push(String(input))
+      return json([])
+    }) as typeof fetch
+    await createStaticApi(SRC, fetcher).quotes()
+    expect(urls).toEqual(['/api/file?path=quotes.json'])
+  })
+
+  it('reports a logged-out session as 401', async () => {
     const { fetcher } = files({}, 401)
     const err = await createStaticApi(SRC, fetcher).quotes().catch((e) => e)
     expect(err.status).toBe(401)
-    expect(JSON.parse(localStorage.getItem('orbit.githubToken') ?? '""')).toBe('')
   })
 })

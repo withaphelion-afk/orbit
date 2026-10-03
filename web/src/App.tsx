@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { CommandBar } from './components/CommandBar'
 import { FunctionBar } from './components/FunctionBar'
 import { Palette } from './components/Palette'
-import { TokenGate } from './components/TokenGate'
+import { LoginGate } from './components/LoginGate'
 import { useLiveFeed } from './hooks/useLiveFeed'
 import { useTerminalKeys } from './hooks/useTerminalKeys'
 import { ChartPanel } from './panels/ChartPanel'
@@ -26,9 +26,9 @@ const HelpPanel = lazy(() => import('./panels/HelpPanel').then((m) => ({ default
  */
 export function App() {
   return (
-    <TokenGate>
+    <LoginGate>
       <Terminal />
-    </TokenGate>
+    </LoginGate>
   )
 }
 
