@@ -18,11 +18,11 @@ from fastapi import WebSocket
 from orbit.config.settings import LIVE_CRYPTO_POLL_SECONDS, LIVE_SILVER_POLL_SECONDS
 from orbit.core.types import Asset
 from orbit.data import silver
-from orbit.data.binance import SYMBOLS
+from orbit.data.binance import API_ROOT, SYMBOLS
 from orbit.data.http import get_json
 
 log = logging.getLogger("orbit.api.live")
-TICKER_URL = "https://api.binance.com/api/v3/ticker/price"
+TICKER_URL = f"{API_ROOT}/ticker/price"
 
 
 @dataclass

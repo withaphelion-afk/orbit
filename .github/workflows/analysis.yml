@@ -1,0 +1,99 @@
+name: analysis
+# The web server finds the GitHub run it started by this name.
+run-name: analysis ${{ inputs.run_id || github.event_name }}
+
+# The daily analysis (playbook, backtest, feedback loop, Vedic model), as the
+# runner's 00:30 UTC schedule does on a PC. Sunday's run adds the placebo check.
+# The web terminal's RUN ANALYSIS button starts this through workflow_dispatch.
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      placebo:
+        description: Also run the placebo check (about 40 minutes more)
+        type: boolean
+        default: false
+      refresh:
+        description: Fetch the latest prices first
+        type: boolean
+        default: true
+      run_id:
+        description: Run record id (set by the web terminal's RUN ANALYSIS button; leave empty)
+        type: string
+        default: ""
+
+concurrency:
+  group: orbit-host
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ORBIT_DATA_SYNC_REMOTE: data
+  ORBIT_DATA_SYNC_JOURNAL: "1"
+  ORBIT_HOST_NAME: github-actions
+
+jobs:
+  analysis:
+    # Skipped (not failed) until the one-time cloud setup sets this variable (README: Free cloud hosting).
+    if: vars.ORBIT_DATA_REPO != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # only for the keep-alive step below
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/orbit-setup
+        with:
+          data-token: ${{ secrets.ORBIT_DATA_TOKEN }}
+          data-repo: ${{ vars.ORBIT_DATA_REPO }}
+      - name: Analysis run
+        id: run
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          PLACEBO: ${{ inputs.placebo }}
+          REFRESH: ${{ inputs.refresh }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          args="--now"
+          if [ "$EVENT" = "schedule" ]; then
+            args="$args --trigger schedule"
+            [ "$(date -u +%u)" = "7" ] && args="$args --placebo"
+          else
+            args="$args --trigger manual"
+            [ "$PLACEBO" = "true" ] && args="$args --placebo"
+            [ "$REFRESH" = "false" ] && args="$args --no-refresh"
+            if [ -n "$RUN_ID" ]; then
+              [[ "$RUN_ID" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$ ]] || { echo "::error::bad run_id"; exit 1; }
+              args="$args --run-id $RUN_ID"
+            fi
+          fi
+          echo "orbit.analysis.run $args"
+          uv run python -m orbit.analysis.run $args
+      - name: Share data
+        if: always()
+        run: uv run python scripts/sync_data.py
+      - name: Share results
+        if: always()
+        run: uv run python -m orbit.outputs --publish
+      - name: Keep the schedules alive
+        # GitHub disables scheduled workflows after 60 days without activity in this repo, and these jobs
+        # write to the data repo, not here. Re-enabling them every day resets that clock.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in runner.yml analysis.yml; do
+            gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/enable" || echo "::warning::could not re-enable ${wf}"
+          done
+      - name: Report a failed run
+        if: steps.run.outcome == 'failure'
+        run: |
+          echo "::error::The analysis run failed; see 'Analysis run' above."
+          exit 1

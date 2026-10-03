@@ -449,8 +449,12 @@ def create_app(live: bool = True) -> FastAPI:
 
     @app.post("/api/analysis/runs", status_code=202, response_model=AnalysisRun)
     def start_run(req: RunRequest):
+        from orbit import cloud
+
+        # On a cloud host the run goes to GitHub Actions (cloud.py); on a PC it's a local process.
+        spawn = {"spawn": cloud.dispatch} if cloud.enabled() else {}
         try:
-            return jobs.start("manual", include_placebo=req.placebo, refresh_data=req.refresh)
+            return jobs.start("manual", include_placebo=req.placebo, refresh_data=req.refresh, **spawn)
         except jobs.AlreadyRunning as exc:
             raise HTTPException(409, f"A run is already {exc.run.status} (started {exc.run.created_at:%H:%M} UTC). Wait for it to finish.")
 

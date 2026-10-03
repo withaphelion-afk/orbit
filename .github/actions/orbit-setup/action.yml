@@ -1,0 +1,37 @@
+name: Orbit setup
+description: Install Orbit, connect the private data repo, and pull the latest data and results.
+
+inputs:
+  data-token:
+    description: Token with read/write access to the private data repo (secret ORBIT_DATA_TOKEN)
+    required: true
+  data-repo:
+    description: owner/name of the private data repo (variable ORBIT_DATA_REPO)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+    - shell: bash
+      run: uv sync --frozen
+    - name: Connect the data repo
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.data-token }}
+        REPO: ${{ inputs.data-repo }}
+      run: |
+        if [ -z "$TOKEN" ] || [ -z "$REPO" ]; then
+          echo "::error::Set the ORBIT_DATA_TOKEN secret and the ORBIT_DATA_REPO variable (see README, Free cloud hosting)."
+          exit 1
+        fi
+        # The token lives only in git's config on this throwaway runner; remote URLs and logs stay clean.
+        git config --global url."https://x-access-token:${TOKEN}@github.com/${REPO}".insteadOf "https://github.com/${REPO}"
+        git config --global user.name "orbit-actions"
+        git config --global user.email "orbit-actions@users.noreply.github.com"
+        git remote add data "https://github.com/${REPO}.git"
+    - name: Pull data and results
+      shell: bash
+      run: |
+        uv run python scripts/sync_data.py --pull
+        uv run python -m orbit.outputs --fetch

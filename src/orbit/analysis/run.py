@@ -121,7 +121,28 @@ def main(job_id: str) -> None:
         raise
 
 
+def run_now(trigger: str, include_placebo: bool, refresh_data: bool, run_id: str | None = None) -> None:
+    """Create a run and execute it in this process (for hosts without a long-lived
+    runner, e.g. a scheduled GitHub Actions job). Same record as a button-started run."""
+    from orbit.analysis import jobs
+
+    run = jobs.start(trigger, include_placebo=include_placebo, refresh_data=refresh_data, spawn=lambda run: None, run_id=run_id)
+    if run.status == "failed":
+        raise SystemExit(f"could not start analysis run: {run.error}")
+    main(run.id)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run one Orbit analysis job")
-    parser.add_argument("--job", required=True, help="run id created by orbit.analysis.jobs.start")
-    main(parser.parse_args().job)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--job", help="run id created by orbit.analysis.jobs.start")
+    group.add_argument("--now", action="store_true", help="create a run and execute it here, in the foreground")
+    parser.add_argument("--trigger", choices=["manual", "schedule"], default="schedule")
+    parser.add_argument("--placebo", action="store_true", help="also run the placebo check (--now only)")
+    parser.add_argument("--no-refresh", action="store_true", help="skip refreshing prices and ephemeris (--now only)")
+    parser.add_argument("--run-id", help="use this id for the run record (--now only; the web server picks it when it hands a run to GitHub)")
+    args = parser.parse_args()
+    if args.now:
+        run_now(args.trigger, args.placebo, not args.no_refresh, args.run_id)
+    else:
+        main(args.job)

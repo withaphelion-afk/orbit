@@ -54,13 +54,26 @@ def alive(pid: int) -> bool:
         ok = k32.GetExitCodeProcess(handle, ctypes.byref(code))
         k32.CloseHandle(handle)
         return bool(ok) and code.value == 259  # STILL_ACTIVE
+    # A process that has exited stays a zombie until its parent collects it, and
+    # signal 0 still reaches a zombie. Collect it if it's ours; a zombie that is
+    # someone else's child (Linux shows those in /proc) is not running either.
+    try:
+        reaped, _ = os.waitpid(pid, os.WNOHANG)
+        if reaped == pid:
+            return False
+    except ChildProcessError:
+        pass  # not our child
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
-    return True
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return True  # no /proc (macOS): signal 0 succeeded and it isn't our zombie
 
 
 class LockTimeout(TimeoutError):

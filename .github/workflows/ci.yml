@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      ORBIT_DATA_SYNC: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --extra dev
+      - run: uv run pytest -q
+
+  space-image:
+    # The Hugging Face Space's image (deploy/hf-space), built from this commit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          cp -r deploy/hf-space "$RUNNER_TEMP/space"
+          echo "$REPO" > "$RUNNER_TEMP/space/ORBIT_REPO"
+          echo "$SHA" > "$RUNNER_TEMP/space/ORBIT_COMMIT"
+          docker build -t orbit-space "$RUNNER_TEMP/space"
+      - name: The app loads inside it
+        run: docker run --rm orbit-space uv run --frozen --no-dev python -c "import orbit.cloud, orbit.api.app; print('ok')"
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

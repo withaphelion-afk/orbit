@@ -99,24 +99,6 @@ class Planet(str, Enum):
     KETU = "KETU"
 
 
-class EphemerisSnapshot(BaseModel):
-    """Where one planet was, on one day, from Earth's point of view.
-
-    `longitude` is ecliptic longitude in degrees (0-360), the standard
-    astrological/astronomical coordinate for "which zodiac sign." `sign`
-    is that same position translated into a zodiac sign name for
-    readability. `retrograde` is True when the planet's apparent motion
-    is backward from Earth's viewpoint, computed by comparing today's
-    longitude to yesterday's.
-    """
-
-    planet: Planet
-    date: datetime
-    longitude: float
-    sign: str
-    retrograde: bool
-
-
 class FeatureRecord(BaseModel):
     """One computed signal value, for one asset, on one day.
 

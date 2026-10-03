@@ -4,7 +4,7 @@ A 24/7 systematic trading assistant for **BTC, ETH, SOL, and Silver**. It watche
 
 This project doubles as a learning project. Every module is built to be understandable, not just functional — comments and docs explain *why*, not just *what*.
 
-**To install and run it on any machine (Windows, macOS, Linux), see [Install and run on any machine](#install-and-run-on-any-machine).** It takes three tools and one command.
+**It runs in the cloud for free, with no PC on:** GitHub Actions runs the runner and the analysis, and a Hugging Face Space serves the web terminal. See [Free cloud hosting](#free-cloud-hosting-no-pc-needed). **To run it on your own machine instead (Windows, macOS, Linux), see [Install and run on any machine](#install-and-run-on-any-machine).**
 
 ## Core ideas
 
@@ -29,9 +29,14 @@ orbit/
     runner/          # 24/7 loop: data -> features -> suggestions; daily analysis
     alerts/          # Telegram/console notifier (not built yet)
     launcher.py      # start/stop/status/autostart on any OS (scripts/start_orbit.py)
+    cloud.py         # the web server on a free cloud host (Hugging Face Space)
+    datasync.py      # shares the data (prices, caches, journal) through the data repo
+    outputs.py       # shares the computed results the same way
     config/          # settings (assets, timeframe, secrets via .env)
     core/            # shared types used everywhere (Candle, Signal, Trade, ...)
   web/               # React trading terminal (see web/README.md)
+  deploy/hf-space/   # the Hugging Face Space: Dockerfile and its README
+  .github/           # CI, deployment, and the hourly runner / daily analysis jobs
     src/api/         # API client; types mirrored from core/types.py and api/schemas.py
     src/panels/      # one screen per terminal function (chart, watchlist, suggestions, ...)
   tests/             # mirrors src/orbit structure
@@ -88,7 +93,7 @@ After that the runner keeps everything current by itself: prices every hour, the
 | `No .venv yet. Install uv` | Install uv (step 1) and run the start command again. |
 | `Node.js/npm not found` | Install Node.js 20.19+. Everything else runs meanwhile, just without the web terminal. |
 | `--status` says the runner is running, but SYS (F8) shows it NEVER_RUN or STALE | A leftover file points at another program. Stop Orbit, delete `data/runner_status.json` and the `data/run` folder, and start again. |
-| The runner log shows price errors from Binance (HTTP 451 or 403) | Binance blocks some countries (the US, for example). This machine still gets every price from GitHub through the daily sync, from a machine that can reach Binance. |
+| The runner log shows price errors from Binance (HTTP 451 or 403) | Orbit uses Binance's market-data mirror (`data-api.binance.vision`), which works from the US too. If a region still blocks it, this machine gets every price from GitHub through the sync. `uv run python scripts/probe_sources.py` shows which sources answer. |
 | `Data sync: ... Couldn't send this machine's data` | This machine can read from GitHub but not write to it (not logged in, or no access). It still receives everything. Log in to GitHub to send too. |
 | Port 8000 is already in use | Put `ORBIT_API_PORT=8001` (or any free port) in a `.env` file in the orbit folder. |
 | Windows blocks Python packages (Smart App Control) | Orbit avoids the affected packages. If a start still fails, send the error. |
@@ -118,7 +123,7 @@ uv run python scripts/backfill_silver.py   # the spot-silver download (already s
 
 ### Running Orbit on your machine
 
-Orbit runs on whichever PC is on; there is no server. Each machine keeps its own `data/`, and the part that is slow or impossible to rebuild is shared through GitHub (see [Shared data](#shared-data-the-github-data-branch) below), so a new machine starts with the full histories instead of downloading them again.
+Without the cloud setup below, Orbit runs on whichever PC is on. Each machine keeps its own `data/`, and the part that is slow or impossible to rebuild is shared through GitHub (see [Shared data](#shared-data-the-github-data-branch) below), so a new machine starts with the full histories instead of downloading them again.
 
 | Command | What it does |
 | --- | --- |
@@ -163,7 +168,7 @@ Everything else (features, the Vedic sky and events, the playbook, the backtest,
 
 **Taking the data down.** Delete the `data` branch on GitHub, and put `ORBIT_DATA_SYNC=0` in `.env` on every machine. A machine that synced before refuses to put a deleted branch back, even with the setting still on. To publish again later, run `python scripts/sync_data.py --recreate` on one machine. That starts a new, empty history from its current data, so nothing old comes back.
 
-**The journal stays on each machine for now, because this repo is public.** To share it too, make the repo private (GitHub → Settings → Danger Zone → Change visibility). Then put `ORBIT_DATA_SYNC_JOURNAL=1` in `.env` on both machines. `ORBIT_DATA_SYNC=0` turns the sync off entirely.
+**The journal is shared only through a private repo.** The data branch can live in another repo: point `ORBIT_DATA_SYNC_REMOTE` at a git remote for it (the cloud setup uses the private `orbit-data`, as remote `data`). With a private remote, `ORBIT_DATA_SYNC_JOURNAL=1` shares the journal too. Never turn that on against a public repo. `ORBIT_DATA_SYNC=0` turns the sync off entirely.
 
 ### Web terminal
 
@@ -186,6 +191,50 @@ It opens on the monitor screen: a chart on the left and the watchlist on the rig
 
 See [`web/README.md`](web/README.md) for the screens and the API contract.
 
+## Free cloud hosting (no PC needed)
+
+Everything runs on free services, and no machine has to stay on:
+
+| Where | What | When |
+| --- | --- | --- |
+| GitHub Actions, `runner` workflow | One runner cycle: new bars, features, suggestions created, expired and resolved | Every hour |
+| GitHub Actions, `analysis` workflow | Playbook, backtest, feedback loop and Vedic model; placebo check on Sundays | Daily 00:30 UTC, and from the RUN ANALYSIS button |
+| Private repo `orbit-data` | `data` branch: prices, silver cache, kernel, journal (the [data sync](#shared-data-the-github-data-branch)). `outputs` branch: the latest computed results (`src/orbit/outputs.py`) | Written by every job and by the Space |
+| Hugging Face Space (Docker) | The API and the web terminal at one address (`src/orbit/cloud.py`): pulls the data and results every 5 minutes, pushes your decisions within seconds, hands RUN ANALYSIS to GitHub | Always, but it sleeps after 48 hours without a visit (about a minute to wake) |
+
+**Deployments are automatic.** Every push to `main` runs CI (Python tests on Windows, macOS and Linux; web typecheck, lint, tests and build; a build of the Space's image). When CI passes, the `deploy space` workflow puts that commit on the Space, and Hugging Face rebuilds it. Pull requests get the same CI but don't deploy.
+
+**Why a separate private repo for the data:** this code repo is public, which keeps GitHub Actions free with no minute limit. Your journal (decisions and notes) must not be public, so the data lives in a private repo, reached with a token.
+
+### One-time setup
+
+The repo owner (`withaphelion-afk`) does this, because tokens can only reach repos their owner controls. Never paste a token into a chat or a file. Put it only in the secret fields below.
+
+1. **Create the data repo.** On GitHub: New repository → `orbit-data` → **Private**, no README. Then, from a machine with this repo cloned, move the existing data there:
+   ```bash
+   git fetch origin data
+   git push https://github.com/withaphelion-afk/orbit-data.git origin/data:refs/heads/data
+   ```
+2. **Data token.** GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: **only `orbit-data`**. Permissions: **Contents: Read and write**. Copy it.
+3. **Configure the code repo's Actions.** In `orbit`: Settings → Secrets and variables → Actions:
+   - Secrets: `ORBIT_DATA_TOKEN` = the data token. `HF_TOKEN` = a Hugging Face token with **write** access (huggingface.co → Settings → Access Tokens).
+   - Variables: `ORBIT_DATA_REPO` = `withaphelion-afk/orbit-data`. `HF_SPACE` = `your-hf-username/orbit`.
+4. **Create the Space.** huggingface.co → New Space → name `orbit`, SDK **Docker** (blank template), visibility **Private**. Only you can open it, which is the terminal's login. In the Space's Settings → Variables and secrets:
+   - Secret `ORBIT_DATA_TOKEN`: the same data token.
+   - Secret `ORBIT_DISPATCH_TOKEN`: a second fine-grained token with repository access **only `orbit`** and permission **Actions: Read and write**. It lets RUN ANALYSIS start the workflow.
+   - Variable `ORBIT_DATA_REPO` = `withaphelion-afk/orbit-data`.
+5. **First run.** In `orbit` → Actions, run **runner**, then **analysis**, then **deploy space** (each has a "Run workflow" button). After that everything runs by itself.
+6. **PCs that still run Orbit locally** should use the private repo too, or they'll keep syncing to the old public branch. On each one, run `git remote add data https://github.com/withaphelion-afk/orbit-data.git` and put `ORBIT_DATA_SYNC_REMOTE=data` and `ORBIT_DATA_SYNC_JOURNAL=1` in `.env`. Don't keep a PC runner going as well, or two hosts will do the same work.
+7. Once the jobs run, the public `data` branch on `orbit` can be deleted.
+
+### Things to know
+
+- **GitHub turns off scheduled workflows after 60 days with no activity in the repo**, and these jobs write to `orbit-data`, not here. The daily `analysis` job therefore re-enables `runner` and `analysis` at the end of every run (with the job's own token), which resets that clock. If the analysis ever stops for 60 days, re-enable both from the Actions tab.
+- **Until the setup is done, `runner` and `analysis` are skipped**, not failed: they wait for the `ORBIT_DATA_REPO` variable.
+- **This repo's Actions logs are public.** They show prices, regime and counts, never your journal.
+- **Scheduled jobs can start a few minutes late** when GitHub is busy. The SYS screen shows the last cycle and the next analysis.
+- **Binance through `data-api.binance.vision`.** `api.binance.com` refuses US addresses, which is where GitHub's and Hugging Face's servers are. The mirror serves the same market data. `scripts/probe_sources.py` (or the `probe sources` workflow) checks every price source from a given host.
+
 ## For contributors (including other Claude sessions)
 
 Read in this order before starting work:
@@ -205,7 +254,7 @@ This README is the single source of truth for planning — update it in place wh
 
 ## Status
 
-- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`, `EphemerisSnapshot`, `FeatureRecord`) — done.
+- `core/types.py` — shared data model (`Candle`, `Signal`, `TradeSuggestion`, `JournalEntry`, `Regime`, `FeatureRecord`) — done.
 - `data/history.py` — full daily history per asset, stitched across venues and then updated incrementally — done.
   - BTC: Bitstamp from 2013, then Binance from Aug 2017.
   - ETH: Coinbase from May 2016, then Binance from Aug 2017.
@@ -246,7 +295,8 @@ This README is the single source of truth for planning — update it in place wh
   - ASTRO: the Vedic sky, event calendar, playbook, chop track and model
   - SYS: runner, layers, feeds, log and config
 - `launcher.py` — `scripts/start_orbit.py`, `stop_orbit.py` and `autostart.py`: the same commands on Windows, macOS and Linux — done.
-- CI (`.github/workflows/ci.yml`) — Python tests on Windows, macOS and Linux, plus the web typecheck, lint, tests and build, on every push to `main` and every pull request — done.
+- CI/CD (`.github/workflows/`) — `ci.yml`: Python tests on Windows, macOS and Linux, the web typecheck, lint, tests and build, and a build of the Space image, on every push to `main` and every pull request. `deploy-space.yml`: deploys `main` to the Hugging Face Space once CI passes. `runner.yml` (hourly) and `analysis.yml` (daily) are the cloud host — done.
+- `cloud.py` + `outputs.py` + `deploy/hf-space/` — free cloud hosting with no PC on (see [Free cloud hosting](#free-cloud-hosting-no-pc-needed)) — done.
 - Alerts (Telegram) and position sizing — not started yet.
 
 ### Running the 24/7 runner
@@ -384,7 +434,7 @@ Notes from researching how professional quant systems structure this, so we buil
 | 2. Data pipeline | Price data + ephemeris data, stored locally | Done: full stitched histories, incremental updates, ephemeris 2 years ahead |
 | 3. Backtest engine | Walk-forward validation; test astro factors for significance | Done: full-history strategy backtest with costs; Vedic playbook and model (placebo-checked, walk-forward) |
 | 4. Trade journal + scorecard | Logging schema for every signal and decision | Done: every suggestion, decision and outcome, including skipped ones |
-| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Done: runs on whichever PC is on, via `scripts/start_orbit.py` (optionally at login); alerting not started |
+| 5. 24/7 runner | Always-on service, evaluates on schedule, logs/alerts, no execution | Done: hourly on GitHub Actions (or on a PC via `scripts/start_orbit.py`); alerting not started |
 | 6. Feedback loop | Review cadence to correct/reweight the scorecard | Done: retrained on every analysis run; sets confidence only once it beats the plain win rate out-of-sample |
 | 7. Auto-execution | Enabled later, once confidence is earned | Not started |
 | Web terminal | Dashboard for suggestions, decisions, journal, drift and runner status | Done, on real data via `api/` |
@@ -394,7 +444,7 @@ Notes from researching how professional quant systems structure this, so we buil
 
 - **Project name**: working title **Orbit** (used for the astro-transit + always-on-monitoring theme).
 - **Strategy definition**: settled for now: basic RSI(14) divergence (above). Refinements should come from the journal and the feedback loop, one change at a time, each re-backtested.
-- **Hosting**: settled: no server. Orbit runs on the team's own PCs (`scripts/start_orbit.py`, optionally at login), sharing data through the GitHub `data` branch. The daily 00:30 UTC analysis runs whenever a runner is up, and catches up when a PC comes back on.
-- **Sharing the journal**: needs the repo to be private first (see Shared data).
+- **Hosting**: settled: free cloud, no PC. GitHub Actions runs the runner (hourly) and analysis (daily), a private `orbit-data` repo holds the data and results, and a private Hugging Face Space serves the terminal. PCs can still run Orbit locally with `scripts/start_orbit.py`.
+- **Sharing the journal**: settled: through the private `orbit-data` repo (see Free cloud hosting).
 - **Journal fields**: settled: `JournalEntry.outcome_pnl` is the percent return net of costs on the levels you acted on; journal rows add `counterfactual_pnl` (what a skipped or expired suggestion would have returned), `expired`, and `exit_reason`.
 - **Position sizing and alerts**: next to decide.
