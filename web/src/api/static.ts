@@ -29,22 +29,39 @@ import type {
   TransitView,
 } from './types'
 
-const TOKEN_KEY = 'orbit.githubToken'
-const TOKEN_EVENT = 'orbit-token-changed'
-// Tells the token screen; no-op where there is no window (tests).
-const announce = () => typeof window !== 'undefined' && window.dispatchEvent(new Event(TOKEN_EVENT))
+const AUTH_EVENT = 'orbit-auth-changed'
+// Tells the login screen; no-op where there is no window (tests).
+const announce = () => typeof window !== 'undefined' && window.dispatchEvent(new Event(AUTH_EVENT))
 
-/** The saved GitHub token (static build only), and setting it from the app's token screen. */
-export function hasToken(): boolean {
-  return !!load<string>(TOKEN_KEY, '')
+/**
+ * Login (cloud build only). The site's own Vercel functions (web/vercel/api) check the username and password,
+ * keep a 30-day session cookie, and read the private data / start workflows with a GitHub token that never
+ * reaches the browser.
+ */
+export async function checkSession(): Promise<boolean> {
+  try {
+    return (await fetch('/api/session', { credentials: 'same-origin' })).ok
+  } catch {
+    return false
+  }
 }
-export function setToken(value: string): void {
-  save(TOKEN_KEY, value.trim())
+export async function login(username: string, password: string): Promise<void> {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? 'Login failed.')
   announce()
 }
-export function onTokenChange(cb: () => void): () => void {
-  window.addEventListener(TOKEN_EVENT, cb)
-  return () => window.removeEventListener(TOKEN_EVENT, cb)
+export async function logout(): Promise<void> {
+  await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => undefined)
+  announce()
+}
+export function onAuthChange(cb: () => void): () => void {
+  window.addEventListener(AUTH_EVENT, cb)
+  return () => window.removeEventListener(AUTH_EVENT, cb)
 }
 const DECIDED_KEY = 'orbit.decided' // suggestion id -> when you decided, until the snapshot catches up
 const RUN_KEY = 'orbit.startedRun'
@@ -92,35 +109,25 @@ export interface StaticSource {
 }
 
 export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (...a) => fetch(...a)): OrbitApi {
-  const { dataRepo, codeRepo, branch = 'site' } = source
+  void source // the repos are the server's settings now (web/vercel/api); kept for the call signature
 
-  // The app's own token screen (TokenGate) collects it: a browser pop-up is blocked on many phones and installed apps.
-  const token = (): string => {
-    const saved = load<string>(TOKEN_KEY, '')
-    if (saved) return saved
-    throw new ApiError(401, 'Not connected: enter a GitHub token to read your data.')
-  }
-
-  const refused = (status: number): ApiError => {
-    save(TOKEN_KEY, '')
-    announce() // brings the token screen back
-    return new ApiError(status, 'GitHub refused the token (expired, or missing a permission). Enter another.')
+  const loggedOut = (): ApiError => {
+    announce() // brings the login screen back
+    return new ApiError(401, 'Logged out: log in again to see Orbit.')
   }
 
   const cache = new Map<string, { at: number; value: Promise<unknown> }>()
   const fetchFile = async (file: string): Promise<unknown> => {
     let res: Response
     try {
-      res = await fetcher(`https://api.github.com/repos/${dataRepo}/contents/${file}?ref=${branch}`, {
-        headers: { Authorization: `Bearer ${token()}`, Accept: 'application/vnd.github.raw+json', 'X-GitHub-Api-Version': '2022-11-28' },
-      })
+      res = await fetcher(`/api/file?path=${encodeURIComponent(file)}`, { credentials: 'same-origin' })
     } catch (e) {
       if (e instanceof ApiError) throw e
-      throw new ApiError(0, 'Could not reach GitHub. Check your connection.')
+      throw new ApiError(0, 'Could not reach Orbit. Check your connection.')
     }
-    if (res.status === 401 || res.status === 403) throw refused(res.status)
+    if (res.status === 401) throw loggedOut()
     if (res.status === 404) throw new ApiError(404, 'Not published yet. The next GitHub Actions run publishes it (hourly).')
-    if (!res.ok) throw new ApiError(res.status, `${res.status} loading ${file}`)
+    if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? `${res.status} loading ${file}`)
     const body = await res.json()
     if (body && typeof body === 'object' && '__error' in body) throw new ApiError(body.__error.status, body.__error.detail)
     return body
@@ -135,13 +142,14 @@ export function createStaticApi(source: StaticSource, fetcher: typeof fetch = (.
   }
 
   const dispatch = async (workflow: string, inputs: Record<string, string>): Promise<void> => {
-    const res = await fetcher(`https://api.github.com/repos/${codeRepo}/actions/workflows/${workflow}/dispatches`, {
+    const res = await fetcher('/api/dispatch', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token()}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-      body: JSON.stringify({ ref: 'main', inputs }),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow, inputs }),
     })
-    if (res.status === 401 || res.status === 403 || res.status === 404) throw refused(res.status)
-    if (res.status !== 204) throw new ApiError(res.status, `GitHub answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    if (res.status === 401) throw loggedOut()
+    if (res.status !== 204) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? `Couldn't start ${workflow}.`)
     cache.clear() // so the screens pick up the result as soon as it's published
   }
 

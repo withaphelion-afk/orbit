@@ -47,13 +47,21 @@ jobs:
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          # For the site's login service (web/vercel/api), which reads the private data and starts workflows
+          # with this token on the server; it never reaches the browser.
+          ORBIT_GITHUB_TOKEN: ${{ secrets.ORBIT_DATA_TOKEN }}
+          ORBIT_DATA_REPO: ${{ vars.ORBIT_DATA_REPO }}
+          ORBIT_CODE_REPO: ${{ github.repository }}
+          # One login for every device. Override with the ORBIT_LOGIN_USER variable / ORBIT_LOGIN_PASSWORD secret.
+          ORBIT_LOGIN_USER: ${{ vars.ORBIT_LOGIN_USER || 'saksham' }}
+          ORBIT_LOGIN_PASSWORD: ${{ secrets.ORBIT_LOGIN_PASSWORD || '00000000' }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::notice::VERCEL_TOKEN is not set, so the terminal isn't deployed (README: Free cloud hosting)."
             exit 0
           fi
-          # A plain static folder; the folder's name becomes the Vercel project's ("orbit").
-          mkdir -p "$RUNNER_TEMP/orbit" && cp -r web/dist/. "$RUNNER_TEMP/orbit/"
+          # The static terminal plus its login service (Vercel functions in api/); the folder's name is the project's ("orbit").
+          mkdir -p "$RUNNER_TEMP/orbit" && cp -r web/dist/. "$RUNNER_TEMP/orbit/" && cp -r web/vercel/api "$RUNNER_TEMP/orbit/api"
           cd "$RUNNER_TEMP/orbit"
-          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" | tee "$RUNNER_TEMP/vercel.txt"
+          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"             -e ORBIT_GITHUB_TOKEN="$ORBIT_GITHUB_TOKEN" -e ORBIT_DATA_REPO="$ORBIT_DATA_REPO" -e ORBIT_CODE_REPO="$ORBIT_CODE_REPO"             -e ORBIT_LOGIN_USER="$ORBIT_LOGIN_USER" -e ORBIT_LOGIN_PASSWORD="$ORBIT_LOGIN_PASSWORD" | tee "$RUNNER_TEMP/vercel.txt"
           echo "### Deployed: $(tail -1 "$RUNNER_TEMP/vercel.txt")" >> "$GITHUB_STEP_SUMMARY"
