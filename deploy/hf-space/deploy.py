@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 from huggingface_hub import HfApi
+from huggingface_hub.errors import HfHubHTTPError
 
 HERE = Path(__file__).resolve().parent
 SPACE_FILES = ("Dockerfile", "README.md")
@@ -25,7 +26,14 @@ def main() -> int:
     api = HfApi(token=token)
     space = os.environ.get("HF_SPACE") or f"{api.whoami()['name']}/orbit"
 
-    created = api.create_repo(space, repo_type="space", space_sdk="docker", private=True, exist_ok=True)
+    try:
+        created = api.create_repo(space, repo_type="space", space_sdk="docker", space_hardware="cpu-basic",
+                                  private=True, exist_ok=True)
+    except HfHubHTTPError as exc:
+        # Hugging Face puts the reason (e.g. a plan limit) in the body; the exception text often omits it.
+        body = exc.response.text[:500] if exc.response is not None else ""
+        print(f"::error::Hugging Face refused to create {space}: {exc.server_message or ''} {body}")
+        return 1
     print(f"Space: {created}")
 
     missing = []
