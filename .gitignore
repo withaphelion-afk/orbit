@@ -3,7 +3,6 @@ __pycache__/
 .venv/
 .env
 data/*.csv
-data/ephemeris/
 data/features/
 data/logs/
 .pytest_cache/

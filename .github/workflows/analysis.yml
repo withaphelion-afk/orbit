@@ -1,4 +1,6 @@
 name: analysis
+# The web server finds the GitHub run it started by this name.
+run-name: analysis ${{ inputs.run_id || github.event_name }}
 
 # The daily analysis (playbook, backtest, feedback loop, Vedic model), as the
 # runner's 00:30 UTC schedule does on a PC. Sunday's run adds the placebo check.
@@ -16,6 +18,10 @@ on:
         description: Fetch the latest prices first
         type: boolean
         default: true
+      run_id:
+        description: Run record id (set by the web terminal's RUN ANALYSIS button; leave empty)
+        type: string
+        default: ""
 
 concurrency:
   group: orbit-host
@@ -48,6 +54,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           PLACEBO: ${{ inputs.placebo }}
           REFRESH: ${{ inputs.refresh }}
+          RUN_ID: ${{ inputs.run_id }}
         run: |
           args="--now"
           if [ "$EVENT" = "schedule" ]; then
@@ -57,6 +64,10 @@ jobs:
             args="$args --trigger manual"
             [ "$PLACEBO" = "true" ] && args="$args --placebo"
             [ "$REFRESH" = "false" ] && args="$args --no-refresh"
+            if [ -n "$RUN_ID" ]; then
+              [[ "$RUN_ID" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$ ]] || { echo "::error::bad run_id"; exit 1; }
+              args="$args --run-id $RUN_ID"
+            fi
           fi
           echo "orbit.analysis.run $args"
           uv run python -m orbit.analysis.run $args

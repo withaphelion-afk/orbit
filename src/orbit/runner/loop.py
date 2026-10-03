@@ -158,6 +158,7 @@ def run_single_cycle(interval_seconds: int = RUNNER_INTERVAL_SECONDS) -> bool:
     separate job there, and syncing is the caller's job. Returns whether it worked."""
     logger = _setup_logging()
     status.mark_scheduled(interval_seconds)
+    status.mark_next_analysis(schedule.next_slot(datetime.now(timezone.utc), schedule.parse_hhmm(ANALYSIS_DAILY_AT_UTC)))
     status.mark_cycle_start()
     try:
         run_once(logger)

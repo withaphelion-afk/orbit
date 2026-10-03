@@ -13,7 +13,7 @@ import io
 from pathlib import Path
 
 from orbit.config.settings import DATA_DIR
-from orbit.core.types import Asset, Candle, EphemerisSnapshot, Planet
+from orbit.core.types import Asset, Candle
 from orbit.fsutil import atomic_write_text
 
 
@@ -73,48 +73,3 @@ def load_candles(asset: Asset, timeframe: str) -> list[Candle]:
                 )
             )
     return candles
-
-
-def _ephemeris_csv_path(planet: Planet) -> Path:
-    return DATA_DIR / "ephemeris" / f"{planet.value}.csv"
-
-
-def save_ephemeris_snapshots(snapshots: list[EphemerisSnapshot]) -> Path:
-    """Write ephemeris snapshots to CSV, overwriting any existing file for that planet.
-
-    Assumes all snapshots passed in are for the same planet.
-    """
-    if not snapshots:
-        raise ValueError("no snapshots to save")
-
-    planet = snapshots[0].planet
-    path = _ephemeris_csv_path(planet)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["date", "longitude", "sign", "retrograde"])
-        for snap in snapshots:
-            writer.writerow([snap.date.isoformat(), snap.longitude, snap.sign, snap.retrograde])
-    return path
-
-
-def load_ephemeris_snapshots(planet: Planet) -> list[EphemerisSnapshot]:
-    """Read ephemeris snapshots back from CSV. Empty list if no file exists yet."""
-    path = _ephemeris_csv_path(planet)
-    if not path.exists():
-        return []
-
-    snapshots = []
-    with path.open(newline="") as f:
-        for row in csv.DictReader(f):
-            snapshots.append(
-                EphemerisSnapshot(
-                    planet=planet,
-                    date=row["date"],
-                    longitude=float(row["longitude"]),
-                    sign=row["sign"],
-                    retrograde=row["retrograde"] == "True",
-                )
-            )
-    return snapshots

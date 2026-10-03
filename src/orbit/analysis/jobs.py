@@ -147,13 +147,17 @@ def _spawn(run: AnalysisRun) -> None:
         subprocess.Popen(args, stdout=log, **kwargs)
 
 
-def start(trigger: Trigger, include_placebo: bool = False, refresh_data: bool = True, spawn=_spawn) -> AnalysisRun:
+def new_run_id() -> str:
+    return f"{_now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+
+
+def start(trigger: Trigger, include_placebo: bool = False, refresh_data: bool = True, spawn=_spawn, run_id: str | None = None) -> AnalysisRun:
     """Queue a run and start its process. Raises AlreadyRunning if one is active."""
     active = current()
     if active:
         raise AlreadyRunning(active)
     run = AnalysisRun(
-        id=f"{_now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}",
+        id=run_id or new_run_id(),
         trigger=trigger,
         include_placebo=include_placebo,
         refresh_data=refresh_data,
