@@ -25,6 +25,7 @@ from orbit.core.types import (
     ConfidenceLabel,
     Decision,
     Direction,
+    JournalEntry,
     PatternResult,
     Planet,
     ProjectionTrack,
@@ -75,9 +76,10 @@ LIVE_FRESH = timedelta(minutes=5)
 
 def _journal_row(r) -> JournalRow:
     expired = r.status == "expired"
-    entry = r.journal_entry()
-    if expired:
-        entry = entry.model_copy(update={"decision": Decision.SKIPPED, "notes": "No decision in time: expired, logged as skipped."})
+    if expired:  # no decision exists to build the entry from: log it as skipped
+        entry = JournalEntry(suggestion=r.suggestion, decision=Decision.SKIPPED, notes="No decision in time: expired, logged as skipped.")
+    else:
+        entry = r.journal_entry()
     skipped = expired or r.decision == Decision.SKIPPED
     out = r.acted if r.decision in (Decision.TAKEN, Decision.MODIFIED) else r.paper
     return JournalRow(

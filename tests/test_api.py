@@ -41,6 +41,33 @@ def test_empty_journal_and_no_backtest_answer_honestly(client, monkeypatch, tmp_
     assert client.get("/api/backtest").status_code == 404
 
 
+def _journal_record(status: str, **extra) -> dict:
+    return {"id": f"BTC-4h-{status}", "created_at": "2026-10-08T00:05:00Z", "signal_date": "2026-10-08T00:00:00+00:00", "timeframe": "4h",
+            "risk_reward": 2.0, "features": {}, "status": status,
+            "suggestion": {"asset": "BTC", "timestamp": "2026-10-08T00:00:00Z", "direction": "LONG", "confidence": 0.4, "entry_price": 100,
+                           "stop_loss": 95, "take_profit": 110, "signals": []},
+            "paper": {"entry_date": "2026-10-08T04:00:00+00:00", "entry": 100, "exit_date": "2026-10-09T00:00:00+00:00", "exit_price": 95,
+                      "reason": "stop", "return_pct": -5.2, "r_multiple": -1.0}, **extra}
+
+
+def test_journal_lists_expired_undecided_suggestions_as_skipped(client, monkeypatch, tmp_path):
+    import json
+
+    from orbit.journal import store as journal_store
+
+    path = tmp_path / "suggestions.json"
+    decided = _journal_record("decided", decision="TAKEN", decided_at="2026-10-08T01:00:00Z")
+    path.write_text(json.dumps([_journal_record("expired"), decided]))
+    monkeypatch.setattr(journal_store, "PATH", path)
+    resp = client.get("/api/journal")
+    assert resp.status_code == 200
+    rows = {r["id"]: r for r in resp.json()}
+    expired = rows["BTC-4h-expired"]
+    assert expired["expired"] is True and expired["entry"]["decision"] == "SKIPPED"
+    assert expired["counterfactual_pnl"] == -5.2
+    assert rows["BTC-4h-decided"]["entry"]["decision"] == "TAKEN" and rows["BTC-4h-decided"]["expired"] is False
+
+
 def test_missing_history_is_a_clear_404(client, monkeypatch):
     monkeypatch.setattr(store, "candles", lambda asset: [])
     r = client.get("/api/candles/BTC")

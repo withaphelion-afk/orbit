@@ -52,3 +52,13 @@ def test_pattern_key_is_reversible_and_matches_the_web_client():
     key = snapshot.pattern_key("MARS:INGRESS:Aries|VAKRI")
     assert key == "4d4152533a494e47524553533a41726965737c56414b5249"  # same as web/src/api/static.test.ts
     assert bytes.fromhex(key).decode() == "MARS:INGRESS:Aries|VAKRI"
+
+
+def test_one_crashing_endpoint_does_not_stop_the_snapshot(tmp_path):
+    class Client:
+        def get(self, url):
+            raise ValueError("boom")
+
+    assert snapshot._render(Client(), tmp_path, "journal.json", "/api/journal") is None
+    err = json.loads((tmp_path / "journal.json").read_text(encoding="utf-8"))["__error"]
+    assert err["status"] == 500 and "boom" in err["detail"]

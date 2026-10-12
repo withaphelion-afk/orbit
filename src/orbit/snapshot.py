@@ -66,7 +66,12 @@ def _write(out: Path, rel: str, body: str) -> None:
 
 def _render(client, out: Path, rel: str, url: str) -> object | None:
     """Write one endpoint's answer to out/rel; returns the parsed body when it succeeded."""
-    response = client.get(url)
+    try:
+        response = client.get(url)
+    except Exception as exc:  # one endpoint crashing must not stop the other files from being published
+        print(f"Snapshot: {url} failed: {exc!r}", file=sys.stderr)
+        _write(out, rel, json.dumps({"__error": {"status": 500, "detail": f"{type(exc).__name__}: {exc}"}}))
+        return None
     if response.status_code == 200:
         _write(out, rel, response.text)
         return response.json()
