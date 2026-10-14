@@ -1,0 +1,37 @@
+name: vercel open
+
+# Run by hand to turn off Vercel Authentication (SSO protection) for the `orbit` project, so the site is reachable
+# without a Vercel account and Orbit's own login (and "Continue as guest") is the only gate. Uses the VERCEL_TOKEN
+# secret that deploy web already uses. Set the `team` input if the project isn't under the "aphelion4" team.
+on:
+  workflow_dispatch:
+    inputs:
+      team:
+        description: Vercel team slug that owns the project
+        default: aphelion4
+      project:
+        description: Vercel project name
+        default: orbit
+
+permissions:
+  contents: read
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      TEAM: ${{ inputs.team }}
+      PROJECT: ${{ inputs.project }}
+    steps:
+      - name: Turn off Vercel Authentication
+        run: |
+          [ -n "$VERCEL_TOKEN" ] || { echo "::error::VERCEL_TOKEN is not set."; exit 1; }
+          url="https://api.vercel.com/v9/projects/${PROJECT}?slug=${TEAM}"
+          code=$(curl -sS -o resp.json -w '%{http_code}' -X PATCH "$url" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"ssoProtection": null}')
+          echo "Vercel answered $code"
+          [ "$code" = "200" ] || { head -c 400 resp.json; echo; echo "::error::Could not update the project."; exit 1; }
+          echo "ssoProtection is now: $(python3 -c "import json;print(json.load(open('resp.json')).get('ssoProtection'))")"
