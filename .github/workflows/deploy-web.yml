@@ -55,6 +55,8 @@ jobs:
           # One login for every device. Override with the ORBIT_LOGIN_USER variable / ORBIT_LOGIN_PASSWORD secret.
           ORBIT_LOGIN_USER: ${{ vars.ORBIT_LOGIN_USER || 'saksham' }}
           ORBIT_LOGIN_PASSWORD: ${{ secrets.ORBIT_LOGIN_PASSWORD || '00000000' }}
+          # "Continue as guest" (read-only, no journal). Set the ORBIT_GUEST_LOGIN variable to 0 to turn it off.
+          ORBIT_GUEST_LOGIN: ${{ vars.ORBIT_GUEST_LOGIN || '1' }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::notice::VERCEL_TOKEN is not set, so the terminal isn't deployed (README: Free cloud hosting)."
@@ -63,5 +65,5 @@ jobs:
           # The static terminal plus its login service (Vercel functions in api/); the folder's name is the project's ("orbit").
           mkdir -p "$RUNNER_TEMP/orbit" && cp -r web/dist/. "$RUNNER_TEMP/orbit/" && cp -r web/vercel/api "$RUNNER_TEMP/orbit/api"
           cd "$RUNNER_TEMP/orbit"
-          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"             -e ORBIT_GITHUB_TOKEN="$ORBIT_GITHUB_TOKEN" -e ORBIT_DATA_REPO="$ORBIT_DATA_REPO" -e ORBIT_CODE_REPO="$ORBIT_CODE_REPO"             -e ORBIT_LOGIN_USER="$ORBIT_LOGIN_USER" -e ORBIT_LOGIN_PASSWORD="$ORBIT_LOGIN_PASSWORD" | tee "$RUNNER_TEMP/vercel.txt"
+          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"             -e ORBIT_GITHUB_TOKEN="$ORBIT_GITHUB_TOKEN" -e ORBIT_DATA_REPO="$ORBIT_DATA_REPO" -e ORBIT_CODE_REPO="$ORBIT_CODE_REPO"             -e ORBIT_LOGIN_USER="$ORBIT_LOGIN_USER" -e ORBIT_LOGIN_PASSWORD="$ORBIT_LOGIN_PASSWORD" -e ORBIT_GUEST_LOGIN="$ORBIT_GUEST_LOGIN" | tee "$RUNNER_TEMP/vercel.txt"
           echo "### Deployed: $(tail -1 "$RUNNER_TEMP/vercel.txt")" >> "$GITHUB_STEP_SUMMARY"

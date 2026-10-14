@@ -53,7 +53,7 @@ There is no server. GitHub Actions jobs do all the work and publish their result
 
 1. Open **https://orbit-inky-psi.vercel.app** (the Vercel project `orbit`; each **deploy web** run also prints it).
 2. **Install it:** in Chrome, click the install icon at the right of the address bar (or ⋮ → Cast, save and share → Install page as app). It then opens in its own window like a desktop app, with its own icon. On Android: ⋮ → Add to Home screen.
-3. **Log in** with the shared username and password (default **`saksham` / `00000000`**). The same login works on every device, and each device stays logged in for 30 days. To change it, set the variable `ORBIT_LOGIN_USER` and the secret `ORBIT_LOGIN_PASSWORD` in `orbit` → Settings → Secrets and variables → Actions; it applies from the next deploy. The defaults are visible in this public repo, so a stronger password is safer.
+3. **Log in** with the shared username and password (default **`saksham` / `00000000`**). The same login works on every device, and each device stays logged in for 30 days. **Continue as guest** on the login screen gives a read-only 1-day session: guests can't start jobs (Take/Skip, ✓/✗, RUN ANALYSIS) or see the journal, but every other screen shows the same data. Set the variable `ORBIT_GUEST_LOGIN` to `0` to turn it off. To change it, set the variable `ORBIT_LOGIN_USER` and the secret `ORBIT_LOGIN_PASSWORD` in `orbit` → Settings → Secrets and variables → Actions; it applies from the next deploy. The defaults are visible in this public repo, so a stronger password is safer.
 
 What updates when:
 - **Live prices** for BTC, ETH and SOL come straight from Binance in your browser. Silver shows its last stored close.

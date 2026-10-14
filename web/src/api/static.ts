@@ -55,6 +55,12 @@ export async function login(username: string, password: string): Promise<void> {
   if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? 'Login failed.')
   announce()
 }
+/** A read-only session for a visitor without the login (the server can turn this off). */
+export async function guestLogin(): Promise<void> {
+  const res = await fetch('/api/guest', { method: 'POST', credentials: 'same-origin' })
+  if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? 'Guest access failed.')
+  announce()
+}
 export async function logout(): Promise<void> {
   await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => undefined)
   announce()
