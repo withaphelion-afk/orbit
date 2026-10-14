@@ -4,6 +4,8 @@ const crypto = require('node:crypto')
 
 const COOKIE = 'orbit_session'
 const DAYS = 30
+const GUEST = 'guest' // the session name of a guest; login.js refuses it as a username
+const GUEST_DAYS = 1
 const env = (k) => (process.env[k] || '').trim()
 
 function secret() {
@@ -36,11 +38,16 @@ function session(req) {
   return user
 }
 
-function setSession(res, user) {
-  const exp = Math.floor(Date.now() / 1000) + DAYS * 86400
+function setSession(res, user, days = DAYS) {
+  const exp = Math.floor(Date.now() / 1000) + days * 86400
   const value = `${user}.${exp}.${sign(`${user}.${exp}`)}`
-  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${DAYS * 86400}; HttpOnly; Secure; SameSite=Lax`)
+  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${days * 86400}; HttpOnly; Secure; SameSite=Lax`)
 }
+
+const isGuest = (user) => user === GUEST
+
+/** Guest login is on unless the ORBIT_GUEST_LOGIN variable is "0". */
+const guestEnabled = () => env('ORBIT_GUEST_LOGIN') !== '0'
 
 function clearSession(res) {
   res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`)
@@ -53,13 +60,21 @@ function same(a, b) {
 }
 
 function checkLogin(user, pass) {
-  return !!env('ORBIT_LOGIN_USER') && same(user, env('ORBIT_LOGIN_USER')) && same(pass, env('ORBIT_LOGIN_PASSWORD'))
+  return !isGuest(user.toLowerCase()) && !!env('ORBIT_LOGIN_USER') && same(user, env('ORBIT_LOGIN_USER')) && same(pass, env('ORBIT_LOGIN_PASSWORD'))
 }
 
-function requireSession(req, res) {
-  if (session(req)) return true
-  res.status(401).json({ detail: 'Log in to see Orbit.' })
-  return false
+/** A logged-in user; with `owner`, a guest is refused (guests can look, not act). */
+function requireSession(req, res, { owner = false } = {}) {
+  const user = session(req)
+  if (!user) {
+    res.status(401).json({ detail: 'Log in to see Orbit.' })
+    return false
+  }
+  if (owner && isGuest(user)) {
+    res.status(403).json({ detail: 'Guests can look but not act. Log in to do this.' })
+    return false
+  }
+  return true
 }
 
 async function body(req) {
@@ -76,4 +91,4 @@ const github = (path, init = {}) =>
     headers: { Authorization: `Bearer ${env('ORBIT_GITHUB_TOKEN')}`, 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'orbit-web', ...(init.headers || {}) },
   })
 
-module.exports = { env, session, setSession, clearSession, checkLogin, requireSession, body, github }
+module.exports = { env, session, setSession, clearSession, checkLogin, requireSession, body, github, GUEST, GUEST_DAYS, isGuest, guestEnabled }

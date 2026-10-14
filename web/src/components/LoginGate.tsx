@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { LogIn } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { STATIC } from '../api'
-import { checkSession, login, onAuthChange } from '../api/static'
+import { checkSession, guestLogin, login, onAuthChange } from '../api/static'
 
 /** The cloud build's login. On the server build (a PC running Orbit) it renders the app straight away. */
 export function LoginGate({ children }: { children: ReactNode }) {
@@ -36,6 +36,18 @@ export function LoginGate({ children }: { children: ReactNode }) {
       setBusy(false)
     }
   }
+  const asGuest = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await guestLogin()
+      qc.invalidateQueries()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Guest access failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <div className="gate">
       <form className="gate-card" onSubmit={submit}>
@@ -48,6 +60,9 @@ export function LoginGate({ children }: { children: ReactNode }) {
         {error && <p className="gate-err">{error}</p>}
         <button type="submit" className="act run" disabled={busy || !user.trim() || !pass}>
           {busy ? 'Logging in…' : 'Log in'}
+        </button>
+        <button type="button" className="act" onClick={asGuest} disabled={busy} title="Look around without the login; guests can't act or see the journal">
+          Continue as guest
         </button>
       </form>
     </div>
